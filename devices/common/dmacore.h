@@ -138,6 +138,14 @@ public:
     virtual bool dma_is_ready() { return false; }
     virtual void xfer_retry() {}
 
+    /** True while the command being transferred is the last one of a packet.
+        Packet oriented devices use it to tell where a frame ends. */
+    virtual bool is_last_xfer() { return false; }
+
+    /** End the running command before its buffer is full, recording dev_stat
+        as the device status. Used when a packet is shorter than the buffer. */
+    virtual void end_xfer(uint8_t dev_stat) {}
+
 protected:
     DmaDevice*      dev_obj  = nullptr;
     uint32_t        ch_id    = 0; // support for several channels per device
