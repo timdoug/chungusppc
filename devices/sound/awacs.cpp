@@ -228,15 +228,20 @@ void AwacsScreamer::snd_ctrl_write(uint32_t offset, uint32_t value, int size) {
         int subframe = (value >> 14) & 3;
         int reg_num  = (value >> 20) & 7;
 
-        this->codec_ctrl_reg = value | (subframe << 22);
-        this->is_busy        = this->codec_ctrl_reg & 0x1000000;
+        // The busy bit belongs to the codec, not to the guest: HW sets it while
+        // a write is pending and clears it once the codec accepts the value.
+        // Drivers write this register and then spin reading it back until the
+        // bit clears, so handing back whatever the guest wrote wedges them as
+        // soon as anything sets it. The write completes right here, so report
+        // it as no longer pending.
+        this->codec_ctrl_reg = (value | (subframe << 22)) & ~AWAC_CODEC_CTRL_BUSY_LE;
+        this->is_busy        = 0;
 
         uint16_t data = ((value >> 8) & 0xF00) | ((value >> 24) & 0xFF);
         LOG_F(
             9, "%s subframe = %d, reg = %d, data = %04X", this->name.c_str(),
             subframe, reg_num, data);
         this->shadow_regs[reg_num] = data;
-        this->is_busy              = 0;
         break;
     }
     case AWAC_CLIP_COUNT:
