@@ -108,6 +108,11 @@ constexpr auto AWAC_AVAILABLE = 0x40;
 constexpr auto AWAC_READY_BIT = 0x400000;
 constexpr auto AWAC_BUSY_BIT  = 0x1000000;
 
+/** The codec control register is accessed byte-swapped, so the codec's own
+    busy bit (AWAC_BUSY_BIT) reaches us in bit 0. HW owns this bit: it is set
+    while a write is pending and cleared once the codec accepts the value. */
+constexpr auto AWAC_CODEC_CTRL_BUSY_LE = 0x1;
+
 /** Audio processor chip (TDA7433) emulation. */
 class AudioProcessor : public I2CDevice {
 public:
