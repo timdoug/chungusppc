@@ -30,10 +30,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifdef DPPC_ENABLE_SLIRP
 
 #include <loguru.hpp>
+#include <machines/machineproperties.h>
 #include <libslirp.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <deque>
+#include <sstream>
 #include <poll.h>
 #include <vector>
 
@@ -76,6 +79,11 @@ private:
     std::vector<pollfd>               pollfds;
     std::deque<std::vector<uint8_t>>  rcv_queue;
 };
+
+/** Set up "tcp:2323:23,udp:5353:53" style forwards from the host into the
+    guest. Host ports are bound on the loopback address so they aren't exposed
+    to the rest of the network. */
+static void add_host_forwards(Slirp *slirp, const std::string &spec);
 
 static in_addr make_addr(uint32_t host_order) {
     in_addr addr;
@@ -177,11 +185,50 @@ bool SlirpBackend::start(const uint8_t mac_addr[6]) {
         return false;
     }
 
+    add_host_forwards(this->slirp, GET_STR_PROP("enet_hostfwd"));
+
     LOG_F(INFO, "Ethernet: slirp backend, guest 10.0.2.0/24, host 10.0.2.2, "
                 "DNS 10.0.2.3, MAC %02x:%02x:%02x:%02x:%02x:%02x",
           mac_addr[0], mac_addr[1], mac_addr[2],
           mac_addr[3], mac_addr[4], mac_addr[5]);
     return true;
+}
+
+static void add_host_forwards(Slirp *slirp, const std::string &spec) {
+    if (spec.empty())
+        return;
+
+    in_addr host_addr  = make_addr(0x7F000001); // 127.0.0.1
+    in_addr guest_addr = make_addr(SLIRP_DHCP_START);
+
+    std::istringstream all(spec);
+    std::string entry;
+    while (std::getline(all, entry, ',')) {
+        std::istringstream parts(entry);
+        std::string proto, host_port, guest_port;
+        if (!std::getline(parts, proto, ':') ||
+            !std::getline(parts, host_port, ':') ||
+            !std::getline(parts, guest_port, ':')) {
+            LOG_F(ERROR, "Ethernet: malformed forward \"%s\", want proto:hostport:guestport",
+                  entry.c_str());
+            continue;
+        }
+
+        int is_udp = (proto == "udp") ? SLIRP_HOSTFWD_UDP : 0;
+        if (proto != "udp" && proto != "tcp") {
+            LOG_F(ERROR, "Ethernet: unknown protocol \"%s\" in forward", proto.c_str());
+            continue;
+        }
+
+        int hp = std::atoi(host_port.c_str());
+        int gp = std::atoi(guest_port.c_str());
+        if (slirp_add_hostfwd(slirp, is_udp, host_addr, hp, guest_addr, gp) < 0) {
+            LOG_F(ERROR, "Ethernet: could not forward %s port %d", proto.c_str(), hp);
+        } else {
+            LOG_F(INFO, "Ethernet: forwarding %s 127.0.0.1:%d to guest port %d",
+                  proto.c_str(), hp, gp);
+        }
+    }
 }
 
 void SlirpBackend::stop() {

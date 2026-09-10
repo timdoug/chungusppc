@@ -73,6 +73,7 @@ static const map<string, string> PropHelp = {
     {"cdr_img",         "specifies path(s) to CD-ROM image(s)"},
     {"cdr_img2",        "specifies path(s) to secondary CD-ROM image(s)"},
     {"enet_backend",    "specifies the host side of the Ethernet controller"},
+    {"enet_hostfwd",    "forwards host ports into the guest, e.g. tcp:2323:23"},
     {"mon_id",          "specifies which monitor to emulate"},
     {"pci_GPU",         "specifies PCI device for Beige G3 grackle device @12"},
     {"pci_J12",         "insert a PCI device into 32-bit 66MHz slot J12"},
