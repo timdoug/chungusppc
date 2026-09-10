@@ -495,8 +495,8 @@ void DMAChannel::xfer_from_device() {
     this->queue_data += got_bytes;
     this->res_count -= got_bytes;
     this->queue_len -= got_bytes;
-    if (!this->queue_len) {
-        this->finish_cmd();
+    if (!this->queue_len || this->xfer_ended) {
+        this->finish_ended_cmd();
     } else if (got_bytes) {
         LOG_F(WARNING, "%s: got unexpected amount of data in xfer_from_device",
               this->get_name().c_str());
@@ -515,11 +515,29 @@ void DMAChannel::xfer_to_device() {
     this->queue_data += got_bytes;
     this->res_count -= got_bytes;
     this->queue_len -= got_bytes;
-    if (!this->queue_len) {
-        this->finish_cmd();
+    if (!this->queue_len || this->xfer_ended) {
+        this->finish_ended_cmd();
     }
 
     this->interpret_until_blocked();
+}
+
+// Complete the running command, honouring an early end requested by the device.
+// The status bits it reported describe this command only, so drop them again
+// once finish_cmd() has copied them into the command's xferStatus.
+void DMAChannel::finish_ended_cmd() {
+    if (!this->xfer_ended) {
+        this->finish_cmd();
+        return;
+    }
+
+    uint8_t dev_stat   = this->end_dev_stat;
+    this->xfer_ended   = false;
+    this->end_dev_stat = 0;
+
+    this->ch_stat |= dev_stat;
+    this->finish_cmd();
+    this->ch_stat &= ~(uint16_t)dev_stat;
 }
 
 void DMAChannel::xfer_retry() {

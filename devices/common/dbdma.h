@@ -120,6 +120,20 @@ public:
         this->ch_stat = (this->ch_stat & ~mask) | new_val;
     }
 
+    // Called by a device from xfer_from()/xfer_to() to end the current command
+    // before its buffer is full, the way real HW does when a packet ends. The
+    // unfilled remainder stays in cmd.resCount and dev_stat lands in the low
+    // byte of the cmd.xferStatus this command records.
+    void end_xfer(uint8_t dev_stat) override {
+        this->end_dev_stat = dev_stat;
+        this->xfer_ended   = true;
+    }
+
+    bool is_last_xfer() override {
+        return this->cur_cmd == DBDMA_Cmd::OUTPUT_LAST ||
+               this->cur_cmd == DBDMA_Cmd::INPUT_LAST;
+    }
+
     bool            is_out_active() override;
     bool            is_in_active() override;
     DmaPullResult   pull_data(uint32_t req_len, uint32_t *avail_len, uint8_t **p_data) override;
@@ -139,6 +153,7 @@ protected:
     void interpret_until_blocked();
     void update_cmd();
     void finish_cmd();
+    void finish_ended_cmd();
     void xfer_quad(bool is_store);
     void update_irq(uint8_t cmd_bits);
     void xfer_from_device();
@@ -168,6 +183,8 @@ private:
     bool     is_paused         = false;
     bool     in_interpret_loop = false; // interpret_until_blocked() is running
     bool     interpret_again   = false; // a nested call wants another pass
+    bool     xfer_ended        = false; // a device ended the command early
+    uint8_t  end_dev_stat      = 0;     // device status to record for it
     uint8_t  cur_cmd;
     DMACmd * cur_host = nullptr;   // host virtual address of current command
     bool     cur_is_writable = false;  // current command is writable
