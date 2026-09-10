@@ -23,9 +23,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define EVENT_MANAGER_H
 
 #include <core/coresignal.h>
+#include <devices/common/adb/adbkeyboard.h>
 
 #include <cinttypes>
+#include <deque>
 #include <string>
+#include <utility>
 
 class WindowEvent {
 public:
@@ -146,6 +149,12 @@ public:
     void poll_events();
     void set_keyboard_locale(uint32_t keyboard_id);
     void post_keyboard_state_events();
+
+    /** Feed the guest keystrokes from a file, so it can be driven without a
+        human at the keyboard. request_input_script() is signal handler safe. */
+    static void request_input_script();
+    void load_input_script();
+    void feed_input_script();
     void post_cdrom_event(CdromImageEvent& event) {
         _cdrom_signal.emit(event);
     }
@@ -212,6 +221,9 @@ private:
     uint64_t    key_ups = 0;
     uint8_t     buttons_state = 0;
     uint32_t    kbd_locale = 0;
+
+    // keys still to be handed to the guest, one transition at a time
+    std::deque<std::pair<AdbKey, bool>> input_queue; // key, is_down
 };
 
 #endif // EVENT_MANAGER_H
