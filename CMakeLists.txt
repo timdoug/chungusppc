@@ -97,6 +97,23 @@ else()
     ADD_DEFINITIONS(-DSUPPORTS_MEMORY_CTRL_ENDIAN_MODE=0)
 endif()
 
+# Optional user mode networking. Without libslirp the emulator builds exactly as
+# before and the "slirp" Ethernet backend simply isn't offered.
+option (DPPC_ENABLE_SLIRP "Enable user mode networking via libslirp" ON)
+set(DPPC_HAVE_SLIRP FALSE)
+if (DPPC_ENABLE_SLIRP)
+    find_package(PkgConfig QUIET)
+    if (PKG_CONFIG_FOUND)
+        pkg_check_modules(SLIRP QUIET slirp)
+    endif()
+    if (SLIRP_FOUND)
+        set(DPPC_HAVE_SLIRP TRUE)
+        message(STATUS "Found libslirp ${SLIRP_VERSION}: user mode networking enabled")
+    else()
+        message(STATUS "libslirp not found: user mode networking disabled")
+    endif()
+endif()
+
 add_subdirectory("${PROJECT_SOURCE_DIR}/core")
 add_subdirectory("${PROJECT_SOURCE_DIR}/cpu/ppc/")
 add_subdirectory("${PROJECT_SOURCE_DIR}/debugger/")
@@ -240,6 +257,10 @@ endif()
 
 if (DPPC_68K_DEBUGGER)
     target_link_libraries(dingusppc PRIVATE capstone)
+endif()
+
+if (DPPC_HAVE_SLIRP)
+    target_link_libraries(dingusppc PRIVATE ${SLIRP_LINK_LIBRARIES})
 endif()
 
 if (DPPC_BUILD_PPC_TESTS)
