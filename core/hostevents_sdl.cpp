@@ -26,6 +26,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <loguru.hpp>
 #include <SDL.h>
 
+#include <atomic>
+#include <cstring>
+#include <fstream>
+#include <sstream>
+#include <vector>
+
 EventManager* EventManager::event_manager;
 
 static int get_sdl_event_key_code(const SDL_KeyboardEvent& event, uint32_t kbd_locale);
@@ -50,7 +56,164 @@ void EventManager::set_keyboard_locale(uint32_t keyboard_id) {
     this->kbd_locale = keyboard_id;
 }
 
+// ---------------------- scripted key injection ----------------------
+//
+// Lets the emulator be driven without a human at the keyboard, which is the
+// only way to reach a guest that has no serial console or network yet. On
+// SIGUSR2 the file below is read and its keys are fed to the guest, one
+// transition per event poll so the guest has time to notice each one.
+//
+//     text  hello world     type these characters
+//     key   RETURN          press a named key
+//     key   Shift+SLASH     press with modifiers held
+//
+#define INPUT_SCRIPT_PATH "dingusppc-input.txt"
+
+static std::atomic<bool> input_script_requested(false);
+
+void EventManager::request_input_script() {
+    input_script_requested.store(true);
+}
+
+static const struct { const char *name; AdbKey key; } key_names[] = {
+    {"RETURN", AdbKey_Return},     {"ENTER", AdbKey_Return},
+    {"TAB", AdbKey_Tab},           {"SPACE", AdbKey_Space},
+    {"ESC", AdbKey_Escape},        {"ESCAPE", AdbKey_Escape},
+    {"DELETE", AdbKey_Delete},     {"BACKSPACE", AdbKey_Delete},
+    {"UP", AdbKey_ArrowUp},        {"DOWN", AdbKey_ArrowDown},
+    {"LEFT", AdbKey_ArrowLeft},    {"RIGHT", AdbKey_ArrowRight},
+    {"HOME", AdbKey_Home},         {"END", AdbKey_End},
+    {"PAGEUP", AdbKey_PageUp},     {"PAGEDOWN", AdbKey_PageDown},
+    {"MINUS", AdbKey_Minus},       {"EQUAL", AdbKey_Equal},
+    {"SLASH", AdbKey_Slash},       {"PERIOD", AdbKey_Period},
+    {"COMMA", AdbKey_Comma},       {"SEMICOLON", AdbKey_Semicolon},
+    {"QUOTE", AdbKey_Quote},       {"BACKSLASH", AdbKey_Backslash},
+    {"F1", AdbKey_F1}, {"F2", AdbKey_F2}, {"F3", AdbKey_F3}, {"F4", AdbKey_F4},
+    {"F5", AdbKey_F5}, {"F6", AdbKey_F6}, {"F7", AdbKey_F7}, {"F8", AdbKey_F8},
+    {"F9", AdbKey_F9}, {"F10", AdbKey_F10}, {"F11", AdbKey_F11}, {"F12", AdbKey_F12},
+};
+
+static const struct { const char *name; AdbKey key; } mod_names[] = {
+    {"Shift", AdbKey_Shift}, {"Control", AdbKey_Control}, {"Ctrl", AdbKey_Control},
+    {"Option", AdbKey_Option}, {"Alt", AdbKey_Option}, {"Command", AdbKey_Command},
+};
+
+/** Map a printable character to its key, and whether shift is needed. */
+static bool char_to_key(char c, AdbKey *key, bool *shift) {
+    static const char *unshifted = "abcdefghijklmnopqrstuvwxyz0123456789 -=[]\\;',./`";
+    static const AdbKey keys[] = {
+        AdbKey_A, AdbKey_B, AdbKey_C, AdbKey_D, AdbKey_E, AdbKey_F, AdbKey_G,
+        AdbKey_H, AdbKey_I, AdbKey_J, AdbKey_K, AdbKey_L, AdbKey_M, AdbKey_N,
+        AdbKey_O, AdbKey_P, AdbKey_Q, AdbKey_R, AdbKey_S, AdbKey_T, AdbKey_U,
+        AdbKey_V, AdbKey_W, AdbKey_X, AdbKey_Y, AdbKey_Z,
+        AdbKey_0, AdbKey_1, AdbKey_2, AdbKey_3, AdbKey_4,
+        AdbKey_5, AdbKey_6, AdbKey_7, AdbKey_8, AdbKey_9,
+        AdbKey_Space, AdbKey_Minus, AdbKey_Equal, AdbKey_LeftBracket,
+        AdbKey_RightBracket, AdbKey_Backslash, AdbKey_Semicolon, AdbKey_Quote,
+        AdbKey_Comma, AdbKey_Period, AdbKey_Slash, AdbKey_Grave,
+    };
+    static const char *shifted = "ABCDEFGHIJKLMNOPQRSTUVWXYZ)!@#$%^&*( _+{}|:\"<>?~";
+
+    *shift = false;
+    const char *p = strchr(unshifted, c);
+    if (p != nullptr && c != '\0') { *key = keys[p - unshifted]; return true; }
+    p = strchr(shifted, c);
+    if (p != nullptr && c != '\0') { *key = keys[p - shifted]; *shift = true; return true; }
+    return false;
+}
+
+void EventManager::load_input_script() {
+    std::ifstream f(INPUT_SCRIPT_PATH);
+    if (!f) {
+        LOG_F(ERROR, "input: cannot open %s", INPUT_SCRIPT_PATH);
+        return;
+    }
+
+    int queued = 0;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#')
+            continue;
+
+        std::istringstream ls(line);
+        std::string verb;
+        ls >> verb;
+
+        if (verb == "text") {
+            std::string rest;
+            std::getline(ls, rest);
+            if (!rest.empty() && rest[0] == ' ')
+                rest.erase(0, 1);
+            for (char c : rest) {
+                AdbKey key; bool shift;
+                if (!char_to_key(c, &key, &shift)) {
+                    LOG_F(WARNING, "input: no key for '%c'", c);
+                    continue;
+                }
+                if (shift) this->input_queue.push_back({AdbKey_Shift, true});
+                this->input_queue.push_back({key, true});
+                this->input_queue.push_back({key, false});
+                if (shift) this->input_queue.push_back({AdbKey_Shift, false});
+                queued++;
+            }
+        } else if (verb == "key") {
+            std::string spec;
+            ls >> spec;
+            std::vector<AdbKey> mods;
+            size_t plus;
+            while ((plus = spec.find('+')) != std::string::npos) {
+                std::string m = spec.substr(0, plus);
+                spec.erase(0, plus + 1);
+                for (auto &mn : mod_names)
+                    if (m == mn.name) { mods.push_back(mn.key); break; }
+            }
+            AdbKey key = (AdbKey)-1;
+            for (auto &kn : key_names)
+                if (spec == kn.name) { key = kn.key; break; }
+            if (key == (AdbKey)-1) {
+                AdbKey ck; bool sh;
+                if (spec.size() == 1 && char_to_key(spec[0], &ck, &sh))
+                    key = ck;
+            }
+            if (key == (AdbKey)-1) {
+                LOG_F(WARNING, "input: unknown key \"%s\"", spec.c_str());
+                continue;
+            }
+            for (auto m : mods) this->input_queue.push_back({m, true});
+            this->input_queue.push_back({key, true});
+            this->input_queue.push_back({key, false});
+            for (auto it = mods.rbegin(); it != mods.rend(); ++it)
+                this->input_queue.push_back({*it, false});
+            queued++;
+        } else {
+            LOG_F(WARNING, "input: unknown directive \"%s\"", verb.c_str());
+        }
+    }
+
+    LOG_F(INFO, "input: queued %d key(s) from %s", queued, INPUT_SCRIPT_PATH);
+}
+
+void EventManager::feed_input_script() {
+    if (input_script_requested.exchange(false))
+        this->load_input_script();
+
+    if (this->input_queue.empty())
+        return;
+
+    // One transition per poll: the guest's keyboard driver needs to see each
+    // press and release separately.
+    auto ev = this->input_queue.front();
+    this->input_queue.pop_front();
+
+    KeyboardEvent ke{};
+    ke.key   = ev.first;
+    ke.flags = ev.second ? KEYBOARD_EVENT_DOWN : KEYBOARD_EVENT_UP;
+    this->_keyboard_signal.emit(ke);
+}
+
 void EventManager::poll_events() {
+    this->feed_input_script();
+
     SDL_Event event;
 
     while (SDL_PollEvent(&event)) {
