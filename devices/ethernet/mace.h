@@ -98,6 +98,12 @@ public:
     uint8_t read(uint8_t reg_offset);
     void    write(uint8_t reg_offset, uint8_t value);
 
+    // Packet reception isn't implemented, so no frame ever arrives. Leave the
+    // transfer pending like real HW waiting for one: the DmaDevice default
+    // reports the request satisfied, which completes every descriptor of the
+    // receive command list and spins that channel forever.
+    int xfer_from(DmaChannel*, uint8_t*, int) override { return 0; }
+
 private:
     uint16_t    chip_id;          // per-instance MACE Chip ID
     uint8_t     addr_cfg      = 0;
