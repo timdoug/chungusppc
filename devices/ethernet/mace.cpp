@@ -357,6 +357,7 @@ int MaceController::xfer_to(DmaChannel *ch_obj, uint8_t *buf, int len) {
 static const PropMap Mace_properties = {
     {"enet_backend", new StrProperty("null",
         std::vector<std::string>({"null", "loopback", "slirp"}))},
+    {"enet_hostfwd", new StrProperty("")},
 };
 
 static const DeviceDescription Mace_Descriptor = {
