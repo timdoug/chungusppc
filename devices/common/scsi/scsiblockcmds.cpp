@@ -95,6 +95,9 @@ void ScsiBlockCmds::process_command() {
     case ScsiCommand::WRITE_12:
         next_phase = this->write();
         break;
+    case ScsiCommand::VERIFY_10:
+        next_phase = this->verify();
+        break;
     case ScsiCommand::START_STOP_UNIT:
         next_phase = this->start_stop_unit();
         break;
@@ -176,6 +179,31 @@ int ScsiBlockCmds::write() {
     );
 
     return ScsiPhase::DATA_OUT;
+}
+
+int ScsiBlockCmds::verify() {
+    if ((this->cdb_ptr[1] & 1) && !this->linked_cmds_supported()) {
+        LOG_F(WARNING, "VERIFY: RelAdr bit set but it should not be");
+        this->set_field_pointer(1);
+        this->set_bit_pointer(0);
+        this->invalid_cdb();
+        return ScsiPhase::STATUS;
+    }
+
+    // BytChk asks us to compare initiator supplied data against the medium,
+    // which needs a DATA_OUT transfer we don't do yet. Report it instead of
+    // silently claiming the comparison succeeded.
+    if (this->cdb_ptr[1] & 2) {
+        LOG_F(WARNING, "VERIFY: byte check requested but it's not supported");
+        this->set_field_pointer(1);
+        this->set_bit_pointer(1);
+        this->invalid_cdb();
+        return ScsiPhase::STATUS;
+    }
+
+    // Without BytChk this only checks that the medium is readable. Ours is a
+    // regular file, so there is nothing that can fail.
+    return ScsiPhase::STATUS;
 }
 
 int ScsiBlockCmds::start_stop_unit() {
