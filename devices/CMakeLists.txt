@@ -41,6 +41,10 @@ platform_glob(SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
     )
 
 add_library(devices OBJECT ${SOURCES})
+if (DPPC_HAVE_SLIRP)
+    target_compile_definitions(devices PRIVATE DPPC_ENABLE_SLIRP)
+    target_include_directories(devices PRIVATE ${SLIRP_INCLUDE_DIRS})
+endif()
 if (EMSCRIPTEN)
     target_link_libraries(devices PRIVATE)
 else()
