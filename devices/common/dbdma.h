@@ -164,8 +164,10 @@ private:
     uint32_t branch_select  = 0;
     uint32_t wait_select    = 0;
 
-    bool     cmd_in_progress = false;
-    bool     is_paused       = false;
+    bool     cmd_in_progress   = false;
+    bool     is_paused         = false;
+    bool     in_interpret_loop = false; // interpret_until_blocked() is running
+    bool     interpret_again   = false; // a nested call wants another pass
     uint8_t  cur_cmd;
     DMACmd * cur_host = nullptr;   // host virtual address of current command
     bool     cur_is_writable = false;  // current command is writable
