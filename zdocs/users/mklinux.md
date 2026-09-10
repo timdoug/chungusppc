@@ -1,11 +1,16 @@
-# Installing MkLinux DR3
+# Installing MkLinux
 
-MkLinux DR3 is Apple's Mach 3.0 based Linux for Old World Power Macs. It isn't
-booted directly: a Mac OS extension loads the Mach kernel and hands off to it, so
-a working Mac OS install has to come first.
+MkLinux is a Mach 3.0 based Linux for Old World Power Macs, started by Apple and
+later carried on by the MkLinux Developers Association. It isn't booted directly:
+a Mac OS extension loads the Mach kernel and hands off to it, so a working Mac OS
+install has to come first.
 
-The whole install runs off the DR3 CD. DingusPPC has no networking, so leave the
-network unconfigured throughout.
+Most of this describes DR3, Apple's last release. The community's later R1 and R2
+releases install much the same way; see [MkLinux R2](#mklinux-r2) at the end for
+what differs.
+
+The whole install runs off the MkLinux CD, so leave the network unconfigured
+throughout. Networking can be set up afterwards with `--enet_backend=slirp`.
 
 ## What you need
 
@@ -122,7 +127,52 @@ partition map entry, including `Apple_partition_map` itself.
 `MkLinux.prefs` alongside it holds `bootos` (`MacOS` or `MkLinux`) and
 `bootdelay` in seconds. Raising the delay is worth it if you switch often.
 
+## MkLinux R2
+
+R2 ("MkLinux Release 2.0") is Linux 2.0.38 on the same microkernel, with a Red
+Hat 6.2 userland: gcc 2.95.4, glibc 2.1.3, perl 5.6.1. It installs like DR3, with
+these differences.
+
+Its CD carries its own `MkLinux Booter`, `Mach Kernel` and `MkLinux` control
+panel, and its Mac OS installer places them for you. Steps 1 through 4 are
+otherwise unchanged, and step 6 still applies — the booter ships pointing at
+`/dev/scd0`.
+
+The installer is Red Hat's `newt` one rather than DR3's, so step 5 differs:
+
+* Pick **Local CDROM**, then **Install**, then **fdisk** at *Disk Setup* — Disk
+  Druid is offered but refuses to run. Press **Done** without partitioning; the
+  Apple partition map from step 4 is already in place and the Mach server, not
+  Linux, owns it.
+* At *Current Disk Partitions* the root partition arrives with an **empty Mount
+  Point**. Select it, press **F3**, and enter `/`. Nothing is formatted or
+  mounted until this is set.
+* Check the root partition at *Partitions To Format*.
+
+Afterwards, three things are worth fixing from a console login:
+
+* `PROMPT=no` in `/etc/sysconfig/init`. Otherwise every boot stops for good after
+  `Enabling swap space` — `rc.sysinit` runs its body in a background subshell
+  while the foreground waits on `/sbin/getkey`, and the `kill -TERM $(pidof
+  getkey)` meant to release it doesn't find the process here.
+* `nameserver 10.0.2.3` in `/etc/resolv.conf`. The slirp backend answers DNS
+  there but its DHCP lease doesn't carry the server.
+* A telnet line in `/etc/inetd.conf` and `ttyp0`..`ttyp9` in `/etc/securetty`, if
+  you want to reach a root shell from the host over `--enet_hostfwd=tcp:2323:23`.
+  R2 enables neither by default.
+
 ## Troubleshooting
+
+**"mount failed: Invalid argument" while installing R2.** The installer skipped
+its own `mke2fs` and is mounting an unformatted partition. Check the mount point
+first (above). If it still happens, make the filesystem from the host, at the
+partition's byte offset within the image, and press **Retry**:
+
+```
+mke2fs -t ext2 -b 4096 -I 128 -O none -E offset=32768 -F mklinux.img 983032
+```
+
+`-O none -I 128` keeps it to features Linux 2.0 and e2fsck 1.32 understand.
 
 **Arrow keys print `^[[A` and screens jump backwards.** The tty has been left in
 line mode by a subprocess, so newt reads the `ESC` that begins every cursor key
