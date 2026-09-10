@@ -136,12 +136,29 @@ void DMAChannel::interpret_cmd() {
 }
 
 void DMAChannel::interpret_until_blocked() {
-    // Execute ready commands until a transfer is queued or the channel becomes idle/dead.
-    while (this->is_active()) {
-        this->interpret_cmd();
-        if (this->cmd_in_progress)
-            break;
+    // interpret_cmd() starts transfers through xfer_to_device()/xfer_from_device()
+    // and both call us back once the data has moved. Recursing there costs two
+    // stack frames per command, so a long command list overflows the stack. Let
+    // the loop that is already running pick the work up instead.
+    if (this->in_interpret_loop) {
+        this->interpret_again = true;
+        return;
     }
+
+    this->in_interpret_loop = true;
+
+    do {
+        this->interpret_again = false;
+
+        // Execute ready commands until a transfer is queued or the channel becomes idle/dead.
+        while (this->is_active()) {
+            this->interpret_cmd();
+            if (this->cmd_in_progress)
+                break;
+        }
+    } while (this->interpret_again);
+
+    this->in_interpret_loop = false;
 }
 
 void DMAChannel::update_cmd() {
