@@ -82,6 +82,11 @@ public:
     void setup_hw_cursor(std::function<void(uint8_t *dst_buf, int dst_pitch)> draw_hw_cursor,
                          int cursor_width, int cursor_height);
     void update_window_title();
+
+    /** Ask for the next rendered frame to be written out as a BMP. Safe to
+        call from a signal handler: it only sets a flag, and the file is
+        written from the display update itself. */
+    static void request_screenshot();
     void toggle_mouse_grab();
     void update_mouse_grab(bool will_be_grabbed);
 private:

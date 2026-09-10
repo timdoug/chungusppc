@@ -206,6 +206,19 @@ You can use these keyboard commands while the emulator is running in real-time m
 * Control-L: log toggle
 * Control-D: debugger
 
+## Driving the emulator from outside
+
+On platforms with POSIX signals, the emulator can be looked at and typed into
+without a human in front of the window. This is useful for scripting an install
+or for reaching a guest that has no serial console or network yet.
+
+Sending `SIGUSR1` writes the guest's screen, at the guest's own resolution, to
+`dingusppc-screen.bmp` in the working directory:
+
+```
+kill -USR1 $(pgrep dingusppc)
+```
+
 ## Accessing Open Firmware
 
 After booting from a PCI Power Mac ROM without any disk images, enter the debugger and change the NVRAM property `auto-boot?` to false. Exit out of the emulator and boot it back up to access it.

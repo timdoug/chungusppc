@@ -29,6 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <cpu/ppc/ppcmmu.h>
 #include <debugger/debugger.h>
 #include <devices/common/ofnvram.h>
+#include <devices/video/display.h>
 #include <machines/machinebase.h>
 #include <machines/machinefactory.h>
 #include <utils/profiler.h>
@@ -309,6 +310,12 @@ int main(int argc, char** argv) {
 
     // redirect SIGABRT to our own handler
     signal(SIGABRT, sigabrt_handler);
+
+#ifndef _WIN32
+    // write the guest's screen to a file, so it can be looked at without
+    // a human in front of the window
+    signal(SIGUSR1, [](int) { Display::request_screenshot(); });
+#endif
 
     keyboard_id = kbd_map.at(keyboard_string);
 
