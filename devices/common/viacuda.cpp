@@ -595,13 +595,21 @@ void ViaCuda::autopoll_handler() {
         return;
     }
 
-    uint8_t poll_command = this->autopoll_enabled ? this->adb_bus_obj->poll() : 0;
+    // A command response the guest hasn't collected yet is still sitting in the
+    // output buffer while TREQ is asserted or a transfer is being set up.
+    // Building an autopoll packet over the top of it loses the answer the guest
+    // is waiting for, and it waits for it forever. Autopoll repeats every few
+    // milliseconds, so skipping this round costs nothing. Don't poll the bus at
+    // all in that case, otherwise the polled data would be dropped instead.
+    bool response_pending = !this->treq || this->treq_timer_id || this->sr_timer_id;
+
+    if (response_pending)
+        LOG_F(9, "Cuda: autopoll skipped, a command response is still pending");
+
+    uint8_t poll_command = (this->autopoll_enabled && !response_pending)
+                         ? this->adb_bus_obj->poll() : 0;
 
     if (poll_command) {
-        if (!this->old_tip || !this->treq) {
-            LOG_F(WARNING, "Cuda transaction probably in progress");
-        }
-
         // prepare autopoll packet
         response_header(CUDA_PKT_ADB, ADB_STAT_OK | ADB_STAT_AUTOPOLL | ADB_STAT_RESPONSE);
         this->out_buf[2] = poll_command; // put the proper ADB command
