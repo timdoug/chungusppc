@@ -135,6 +135,10 @@ void DMAChannel::interpret_cmd() {
     }
 }
 
+// Upper bound on commands executed in one uninterrupted run of a channel. Real
+// programs block on a device long before this.
+static const int MAX_CMDS_PER_RUN = 65536;
+
 void DMAChannel::interpret_until_blocked() {
     // interpret_cmd() starts transfers through xfer_to_device()/xfer_from_device()
     // and both call us back once the data has moved. Recursing there costs two
@@ -151,7 +155,20 @@ void DMAChannel::interpret_until_blocked() {
         this->interpret_again = false;
 
         // Execute ready commands until a transfer is queued or the channel becomes idle/dead.
+        int cmds_run = 0;
         while (this->is_active()) {
+            // A command list that branches back on itself only stops when a device
+            // leaves a transfer pending. A device that always reports its transfers
+            // complete never blocks the channel, and each finished command queues an
+            // interrupt timer, so the runaway would exhaust memory.
+            if (++cmds_run > MAX_CMDS_PER_RUN) {
+                LOG_F(ERROR, "%s: no device progress after %d commands, marking channel dead",
+                      this->get_name().c_str(), MAX_CMDS_PER_RUN);
+                this->ch_stat |=  CH_STAT_DEAD;
+                this->ch_stat &= ~CH_STAT_ACTIVE;
+                this->interpret_again = false;
+                break;
+            }
             this->interpret_cmd();
             if (this->cmd_in_progress)
                 break;
