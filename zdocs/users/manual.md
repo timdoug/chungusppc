@@ -16,6 +16,7 @@
 * Mac OS X 10.0 - 10.3
 * BeOS DR9 - 5.0 (Using a Power Mac; BeBox is currently not supported)
 * OpenDarwin 6.6.2
+* MkLinux DR3 (see mklinux.md for the install procedure)
 
 ## Disk Initialization
 
