@@ -23,8 +23,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <devices/video/videoctrl.h>
 #include <SDL.h>
 #include <loguru.hpp>
+#include <atomic>
 #include <cmath>
 #include <string>
+
+/** Where a requested screenshot is written. */
+#define SCREENSHOT_PATH "dingusppc-screen.bmp"
 
 bool g_auto_grab_mouse = false;
 
@@ -89,6 +93,44 @@ Display::~Display() {
 }
 
 const double scale_step = std::pow(2.0, 1.0/8.0);
+
+static std::atomic<bool> screenshot_requested(false);
+
+void Display::request_screenshot() {
+    screenshot_requested.store(true);
+}
+
+/** Write the frame just converted from guest video memory out as a BMP.
+
+    Taken straight from the texture staging buffer rather than reading back
+    from the renderer: an accelerated renderer may not support reading its
+    target, and this is the guest's own resolution rather than the scaled
+    window. */
+static void save_screenshot(const uint8_t *src, int pitch, int width, int height) {
+    SDL_Surface *shot = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32,
+                                                       SDL_PIXELFORMAT_ARGB8888);
+    if (shot == nullptr) {
+        LOG_F(ERROR, "screenshot: cannot allocate surface: %s", SDL_GetError());
+        return;
+    }
+
+    // The framebuffer conversion leaves the alpha byte at zero because the
+    // texture ignores it. Force it opaque or the image reads as fully
+    // transparent everywhere.
+    for (int y = 0; y < height; y++) {
+        const uint32_t *in = (const uint32_t *)(src + (size_t)y * pitch);
+        uint32_t *out = (uint32_t *)((uint8_t *)shot->pixels + (size_t)y * shot->pitch);
+        for (int x = 0; x < width; x++)
+            out[x] = in[x] | 0xFF000000u;
+    }
+
+    if (SDL_SaveBMP(shot, SCREENSHOT_PATH) != 0)
+        LOG_F(ERROR, "screenshot: cannot write %s: %s", SCREENSHOT_PATH, SDL_GetError());
+    else
+        LOG_F(INFO, "screenshot: wrote %dx%d to %s", width, height, SCREENSHOT_PATH);
+
+    SDL_FreeSurface(shot);
+}
 
 bool Display::configure(int width, int height) {
     bool is_initialization = false;
@@ -481,6 +523,9 @@ void Display::update(std::function<void(uint8_t *dst_buf, int dst_pitch)> conver
     // overlay cursor data if requested
     if (cursor_ovl_cb != nullptr)
         cursor_ovl_cb(dst_buf, dst_pitch);
+
+    if (screenshot_requested.exchange(false))
+        save_screenshot(dst_buf, dst_pitch, impl->display_w, impl->display_h);
 
     SDL_UnlockTexture(impl->disp_texture);
     SDL_RenderClear(impl->renderer);
