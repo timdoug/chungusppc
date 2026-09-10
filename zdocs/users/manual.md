@@ -219,6 +219,21 @@ Sending `SIGUSR1` writes the guest's screen, at the guest's own resolution, to
 kill -USR1 $(pgrep dingusppc)
 ```
 
+Sending `SIGUSR2` reads `dingusppc-input.txt` from the working directory and
+types it into the guest. Each line is either `text` followed by characters to
+type, or `key` followed by the name of a single key, optionally prefixed with
+`Shift+`, `Control+`, `Option+` or `Command+`. Lines starting with `#` are
+ignored:
+
+```
+text root
+key RETURN
+key Control+C
+```
+
+Keys are handed to the guest one press or release per event poll, so its
+keyboard driver sees each transition separately.
+
 ## Accessing Open Firmware
 
 After booting from a PCI Power Mac ROM without any disk images, enter the debugger and change the NVRAM property `auto-boot?` to false. Exit out of the emulator and boot it back up to access it.

@@ -315,6 +315,10 @@ int main(int argc, char** argv) {
     // write the guest's screen to a file, so it can be looked at without
     // a human in front of the window
     signal(SIGUSR1, [](int) { Display::request_screenshot(); });
+
+    // feed the guest keystrokes from a script file, so it can be driven
+    // without a human at the keyboard
+    signal(SIGUSR2, [](int) { EventManager::request_input_script(); });
 #endif
 
     keyboard_id = kbd_map.at(keyboard_string);
