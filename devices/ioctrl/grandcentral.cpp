@@ -39,6 +39,13 @@ NvramDev::NvramDev(NvramAddrHiDev *addr_hi) {
     this->addr_hi = addr_hi;
 }
 
+// Station address of the emulated Ethernet controller, 08:00:07 being Apple's
+// OUI. The address PROM stores it with each byte's bits reversed and drivers
+// reverse them back, so serve it flipped and hand the MAC itself the address as
+// the boot firmware would.
+static uint8_t mac_address[] = { 0x08, 0x00, 0x07, 0x44, 0x55, 0x66, 0x00, 0x00 };
+static bool bit_flip_0x08 = true;
+
 GrandCentral::GrandCentral() : PCIDevice("mac-io_grandcentral"), InterruptCtrl()
 {
     supports_types(HWCompType::IOBUS_HOST | HWCompType::MMIO_DEV | HWCompType::PCI_DEV | HWCompType::INT_CTRL);
@@ -125,6 +132,9 @@ GrandCentral::GrandCentral() : PCIDevice("mac-io_grandcentral"), InterruptCtrl()
     this->enet_tx_dma->connect(this->mace);
     this->enet_rx_dma->connect(this->mace);
     this->mace->connect(this->enet_rx_dma.get());
+    this->mace->set_mac_address(mac_address);
+    this->mace->register_enet_int(this, this->register_dev_int(IntSrc::ETHERNET));
+    this->mace->set_backend(create_enet_backend(GET_STR_PROP("enet_backend")));
 
     // connect floppy disk HW
     this->swim3 = dynamic_cast<Swim3::Swim3Ctrl*>(gMachineObj->get_comp_by_name("Swim3"));
@@ -176,8 +186,6 @@ static const char *get_name_dma(unsigned dma_channel) {
 // The first 3 bytes of a MAC address is an OUI for "Apple, Inc."
 // A MAC address cannot begin with 0x10 because that will get bit-flipped to 0x08.
 // A MAC address that begins with 0x08 can be stored as bit-flipped or not bit-flipped.
-static uint8_t mac_address[] = { 0x08, 0x00, 0x07, 0x44, 0x55, 0x66, 0x00, 0x00 };
-static bool bit_flip_0x08 = false;
 
 uint32_t GrandCentral::read(uint32_t rgn_start, uint32_t offset, int size)
 {
