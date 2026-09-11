@@ -26,6 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <loguru.hpp>
 #include <SDL.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <fstream>
@@ -56,18 +57,46 @@ void EventManager::set_keyboard_locale(uint32_t keyboard_id) {
     this->kbd_locale = keyboard_id;
 }
 
-// ---------------------- scripted key injection ----------------------
+// ---------------------- scripted input injection ----------------------
 //
-// Lets the emulator be driven without a human at the keyboard, which is the
+// Lets the emulator be driven without a human at the controls, which is the
 // only way to reach a guest that has no serial console or network yet. On
-// SIGUSR2 the file below is read and its keys are fed to the guest, one
-// transition per event poll so the guest has time to notice each one.
+// SIGUSR2 the file below is read and its contents are fed to the guest, one
+// step per event poll so the guest has time to notice each one.
 //
 //     text  hello world     type these characters
 //     key   RETURN          press a named key
 //     key   Shift+SLASH     press with modifiers held
+//     mouse to 120 48       put the pointer at these screen coordinates
+//     mouse by -10 0        move the pointer relative to where it is
+//     mouse click           click the left button, or right / middle
+//     mouse down            hold a button, for dragging
+//     mouse up              release it
+//     mouse step 32         pixels per report, to trade speed for accuracy
+//     mouse rate 16         milliseconds between reports
 //
+// A position is only ever approximate. "mouse to" drives the pointer into the
+// corner first because nothing here knows where the guest is drawing it, and
+// how far the guest then moves for a given delta is up to the guest: Mac OS
+// scales small ones down sharply, so a 32 pixel step tracks roughly 1:1 while
+// an 8 pixel step covers barely half the distance. Take a screenshot and
+// correct rather than trusting the first move to land.
 #define INPUT_SCRIPT_PATH "dingusppc-input.txt"
+
+// The largest delta an ADB report can carry, since it holds a signed 7 bit
+// value per axis and quietly drops the rest. Only used to drive the pointer
+// into the top left corner, where overshooting costs nothing.
+constexpr int MOUSE_STEP_MAX = 63;
+
+// How long a button is held, and the gap left after releasing it. A press and
+// a release handed over back to back fall between two of the guest's polls,
+// which then sees only a button that was never down.
+constexpr uint32_t MOUSE_CLICK_DWELL_MS = 60;
+
+// Far enough to drive the pointer into the top left corner from anywhere in
+// any mode the emulated hardware offers, since nothing here knows the guest's
+// screen size and the pointer stops at the edge regardless.
+constexpr int MOUSE_HOME_TRAVEL = 3072;
 
 static std::atomic<bool> input_script_requested(false);
 
@@ -122,6 +151,42 @@ static bool char_to_key(char c, AdbKey *key, bool *shift) {
     return false;
 }
 
+void EventManager::queue_key(AdbKey key, bool down) {
+    InputAction a{};
+    a.kind = InputAction::Kind::Key;
+    a.key  = key;
+    a.down = down;
+    this->input_queue.push_back(a);
+}
+
+void EventManager::queue_motion(int dx, int dy) {
+    InputAction a{};
+    a.kind = InputAction::Kind::Motion;
+    a.dx   = (int16_t)dx;
+    a.dy   = (int16_t)dy;
+    this->input_queue.push_back(a);
+}
+
+void EventManager::queue_button(uint8_t button, bool down) {
+    InputAction a{};
+    a.kind   = InputAction::Kind::Button;
+    a.button = button;
+    a.down   = down;
+    this->input_queue.push_back(a);
+}
+
+/** Break a move into steps small enough for one ADB report to carry. */
+void EventManager::queue_move_by(int dx, int dy) {
+    while (dx || dy) {
+        int step = this->mouse_step;
+        int sx = std::max(-step, std::min(step, dx));
+        int sy = std::max(-step, std::min(step, dy));
+        this->queue_motion(sx, sy);
+        dx -= sx;
+        dy -= sy;
+    }
+}
+
 void EventManager::load_input_script() {
     std::ifstream f(INPUT_SCRIPT_PATH);
     if (!f) {
@@ -150,10 +215,10 @@ void EventManager::load_input_script() {
                     LOG_F(WARNING, "input: no key for '%c'", c);
                     continue;
                 }
-                if (shift) this->input_queue.push_back({AdbKey_Shift, true});
-                this->input_queue.push_back({key, true});
-                this->input_queue.push_back({key, false});
-                if (shift) this->input_queue.push_back({AdbKey_Shift, false});
+                if (shift) this->queue_key(AdbKey_Shift, true);
+                this->queue_key(key, true);
+                this->queue_key(key, false);
+                if (shift) this->queue_key(AdbKey_Shift, false);
                 queued++;
             }
         } else if (verb == "key") {
@@ -179,18 +244,66 @@ void EventManager::load_input_script() {
                 LOG_F(WARNING, "input: unknown key \"%s\"", spec.c_str());
                 continue;
             }
-            for (auto m : mods) this->input_queue.push_back({m, true});
-            this->input_queue.push_back({key, true});
-            this->input_queue.push_back({key, false});
+            for (auto m : mods) this->queue_key(m, true);
+            this->queue_key(key, true);
+            this->queue_key(key, false);
             for (auto it = mods.rbegin(); it != mods.rend(); ++it)
-                this->input_queue.push_back({*it, false});
+                this->queue_key(*it, false);
+            queued++;
+        } else if (verb == "mouse") {
+            std::string what;
+            ls >> what;
+            if (what == "to" || what == "by") {
+                int x, y;
+                if (!(ls >> x >> y)) {
+                    LOG_F(WARNING, "input: mouse %s needs two numbers", what.c_str());
+                    continue;
+                }
+                if (what == "to") {
+                    // Nothing here knows where the guest is drawing its
+                    // pointer, so start from a corner it can be driven into.
+                    int steps = MOUSE_HOME_TRAVEL / MOUSE_STEP_MAX;
+                    for (int i = 0; i < steps; i++)
+                        this->queue_motion(-MOUSE_STEP_MAX, -MOUSE_STEP_MAX);
+                }
+                this->queue_move_by(x, y);
+            } else if (what == "step" || what == "rate") {
+                int n;
+                if (!(ls >> n) || n <= 0) {
+                    LOG_F(WARNING, "input: mouse %s needs a positive number", what.c_str());
+                    continue;
+                }
+                if (what == "step")
+                    this->mouse_step = std::min(n, MOUSE_STEP_MAX);
+                else
+                    this->mouse_rate_ms = (uint32_t)n;
+            } else if (what == "click" || what == "down" || what == "up") {
+                std::string which;
+                ls >> which;
+                uint8_t button = 0; // left
+                if (which == "right")
+                    button = 1;
+                else if (which == "middle")
+                    button = 2;
+                else if (!which.empty() && which != "left") {
+                    LOG_F(WARNING, "input: unknown button \"%s\"", which.c_str());
+                    continue;
+                }
+                if (what != "up")
+                    this->queue_button(button, true);
+                if (what != "down")
+                    this->queue_button(button, false);
+            } else {
+                LOG_F(WARNING, "input: unknown mouse action \"%s\"", what.c_str());
+                continue;
+            }
             queued++;
         } else {
             LOG_F(WARNING, "input: unknown directive \"%s\"", verb.c_str());
         }
     }
 
-    LOG_F(INFO, "input: queued %d key(s) from %s", queued, INPUT_SCRIPT_PATH);
+    LOG_F(INFO, "input: queued %d action(s) from %s", queued, INPUT_SCRIPT_PATH);
 }
 
 void EventManager::feed_input_script() {
@@ -200,15 +313,53 @@ void EventManager::feed_input_script() {
     if (this->input_queue.empty())
         return;
 
-    // One transition per poll: the guest's keyboard driver needs to see each
-    // press and release separately.
-    auto ev = this->input_queue.front();
+    // One step per poll: a keyboard driver needs to see each press and release
+    // separately, and an ADB mouse reports whatever motion has piled up since
+    // the last time it was asked, so steps handed over together are merged and
+    // then clipped.
+    // Mouse actions are paced against the clock rather than the poll rate,
+    // which is free to run far faster than the guest reads its mouse.
+    InputAction::Kind kind = this->input_queue.front().kind;
+    if (kind == InputAction::Kind::Motion || kind == InputAction::Kind::Button) {
+        uint32_t wait = kind == InputAction::Kind::Button ? MOUSE_CLICK_DWELL_MS
+                                                          : this->mouse_rate_ms;
+        uint32_t now = SDL_GetTicks();
+        if (now - this->last_mouse_ticks < wait)
+            return;
+        this->last_mouse_ticks = now;
+    }
+
+    InputAction act = this->input_queue.front();
     this->input_queue.pop_front();
 
-    KeyboardEvent ke{};
-    ke.key   = ev.first;
-    ke.flags = ev.second ? KEYBOARD_EVENT_DOWN : KEYBOARD_EVENT_UP;
-    this->_keyboard_signal.emit(ke);
+    switch (act.kind) {
+    case InputAction::Kind::Key: {
+        KeyboardEvent ke{};
+        ke.key   = act.key;
+        ke.flags = act.down ? KEYBOARD_EVENT_DOWN : KEYBOARD_EVENT_UP;
+        this->_keyboard_signal.emit(ke);
+        break;
+    }
+    case InputAction::Kind::Motion: {
+        MouseEvent me{};
+        me.xrel  = act.dx;
+        me.yrel  = act.dy;
+        me.flags = MOUSE_EVENT_MOTION;
+        this->_mouse_signal.emit(me);
+        break;
+    }
+    case InputAction::Kind::Button: {
+        MouseEvent me{};
+        if (act.down)
+            this->buttons_state |= 1 << act.button;
+        else
+            this->buttons_state &= ~(1 << act.button);
+        me.buttons_state = this->buttons_state;
+        me.flags = MOUSE_EVENT_BUTTON;
+        this->_mouse_signal.emit(me);
+        break;
+    }
+    }
 }
 
 void EventManager::poll_events() {

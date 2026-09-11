@@ -28,7 +28,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <cinttypes>
 #include <deque>
 #include <string>
-#include <utility>
 
 class WindowEvent {
 public:
@@ -150,8 +149,9 @@ public:
     void set_keyboard_locale(uint32_t keyboard_id);
     void post_keyboard_state_events();
 
-    /** Feed the guest keystrokes from a file, so it can be driven without a
-        human at the keyboard. request_input_script() is signal handler safe. */
+    /** Feed the guest keystrokes and mouse movement from a file, so it can be
+        driven without a human at the controls. request_input_script() is
+        signal handler safe. */
     static void request_input_script();
     void load_input_script();
     void feed_input_script();
@@ -222,8 +222,25 @@ private:
     uint8_t     buttons_state = 0;
     uint32_t    kbd_locale = 0;
 
-    // keys still to be handed to the guest, one transition at a time
-    std::deque<std::pair<AdbKey, bool>> input_queue; // key, is_down
+    // one scripted input at a time, still to be handed to the guest
+    struct InputAction {
+        enum class Kind : uint8_t { Key, Motion, Button } kind;
+        AdbKey  key;    // Kind::Key
+        int16_t dx;     // Kind::Motion
+        int16_t dy;     // Kind::Motion
+        uint8_t button; // Kind::Button, as an ADB button number
+        bool    down;   // Kind::Key and Kind::Button
+    };
+    std::deque<InputAction> input_queue;
+
+    uint32_t    last_mouse_ticks = 0;
+    int         mouse_step = 32;     // pixels per report
+    uint32_t    mouse_rate_ms = 16;  // gap between reports
+
+    void queue_key(AdbKey key, bool down);
+    void queue_motion(int dx, int dy);
+    void queue_button(uint8_t button, bool down);
+    void queue_move_by(int dx, int dy);
 };
 
 #endif // EVENT_MANAGER_H
