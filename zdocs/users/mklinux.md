@@ -19,9 +19,15 @@ throughout. Networking can be set up afterwards with `--enet_backend=slirp`.
   newer, which postdate the DR3 booter.
 * The MkLinux DR3 CD image.
 
-Use `-m pm7200`. The TNT ROM also drives `pm7500`, but that machine instantiates
-a second SCSI bus (MESH) with nothing attached to it, and disk utilities hang
-scanning it.
+Use `-m pm7200` or `-m pm7500` with the same TNT ROM. The rebuilt Mach kernel
+and Linux 2.0.40 server also boot on `pm7500`; see the
+[self-hosted build instructions](../../mklinux-selfhost/README.md).
+
+On the 7500, the additional MESH controller is SCSI bus 0; `--hdd_img` and
+`--cdr_img` attach to the other controller, bus 1. Thus the Mac OS `pdisk`
+names below become `/dev/scsi1.0` and `/dev/scsi1.1`. The Linux disk remains
+`sdb`, and the installed root device remains `/dev/sdb2`. Leave `--hdd_img2`
+and `--cdr_img2` empty for this configuration.
 
 ## 1. Create the disks
 
