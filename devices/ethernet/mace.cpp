@@ -142,7 +142,10 @@ void MaceController::write(uint8_t reg_offset, uint8_t value)
             value &= ~IAC_PHYADDR;
         if (value & (IAC_LOGADDR | IAC_PHYADDR))
             this->addr_ptr = 0;
-        this->addr_cfg = value;
+        // ADDRCHG asks the chip to let the address registers be rewritten and
+        // clears itself once they are ready. Nothing here takes any time, so
+        // drop it at once: drivers spin until it reads back as zero.
+        this->addr_cfg = value & ~IAC_ADDRCHG;
         break;
     case MaceReg::Log_Addr_Flt:
         if (this->addr_cfg & IAC_LOGADDR) {
