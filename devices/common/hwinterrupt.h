@@ -94,6 +94,7 @@ enum IntSrc : uint32_t {
     SLOT_VDS,
     VBL,
     VALKYRIE,
+    SCSI_CURIO2,
 };
 
 /** Base class for interrupt controllers. */
