@@ -20,8 +20,9 @@ if [ $# -gt 0 ]; then
     printf '%s\n' "$@" > dingusppc-input.txt
     kill -USR2 "$pid"
     # A key is up to four transitions and only one goes per event poll, so give
-    # the queue time to drain before asking what the guest did with it.
-    sleep $(( 2 + $# ))
+    # the queue time to drain before asking what the guest did with it. Mouse
+    # moves are far longer than that, so allow the wait to be set outright.
+    sleep "${DPPC_WAIT:-$(( 2 + $# ))}"
 fi
 
 kill -USR1 "$pid"

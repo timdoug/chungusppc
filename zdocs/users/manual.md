@@ -234,12 +234,44 @@ key Control+C
 Keys are handed to the guest one press or release per event poll, so its
 keyboard driver sees each transition separately.
 
+A `mouse` line moves the pointer or works its buttons, which is the only way to
+reach anything a guest won't let you get to from the keyboard:
+
+```
+mouse to 120 48
+mouse click
+mouse down
+mouse by -10 0
+mouse up
+```
+
+`to` takes screen coordinates, `by` is relative, and `click`, `down` and `up`
+take `left`, `right` or `middle`, defaulting to left.
+
+Treat a position as approximate. `to` drives the pointer into the top left
+corner first, because nothing on this side knows where the guest is drawing it,
+and how far the guest moves for a given delta is the guest's business: an ADB
+mouse reports a signed 7 bit delta per poll, and Mac OS scales small ones down
+sharply. Measured against a target 320 pixels away, a 32 pixel step lands within
+a few pixels while an 8 pixel step covers barely half the distance. X11 guests
+damp it differently again. `mouse step` and `mouse rate` tune the pixels per
+report and the gap between them, so the way to hit something small is to move,
+take a screenshot, and correct:
+
+```
+mouse step 32
+mouse rate 16
+```
+
 `tools/dppc-drive.sh` wraps both: it types its arguments and then captures the
 screen. Run it from the emulator's working directory.
 
 ```
 tools/dppc-drive.sh 'text root' 'key RETURN'
 ```
+
+Set `DPPC_WAIT` to override how long it waits for the queue to drain, which a
+pointer move needs since it is made of many small steps.
 
 Once the guest has networking, `tools/dppc-shell.py` is easier still — it runs
 commands over telnet and prints their output, given `--enet_hostfwd=tcp:2323:23`.
