@@ -435,7 +435,12 @@ void GrandCentral::write(uint32_t rgn_start, uint32_t offset, uint32_t value, in
         switch (offset) {
         case MIO_INT_MASK1:
             this->int_mask = BYTESWAP_32(value);
+            // The mask decides whether a pending event reaches the CPU at all,
+            // so masking one off has to take the interrupt line back down.
+            // Software that masks everything without acknowledging first is
+            // otherwise interrupted forever by an event it can no longer see.
             this->signal_cpu_int();
+            this->clear_cpu_int();
             break;
         case MIO_INT_CLEAR1:
             value = BYTESWAP_32(value);
@@ -542,7 +547,10 @@ void GrandCentral::ack_int_common(uint64_t irq_id, uint8_t irq_line_state) {
         this->int_levels &= ~(uint32_t)irq_id;
     }
 
+    // In native mode a device dropping its line clears the event with it, so
+    // the CPU's interrupt line has to be re-evaluated in both directions.
     this->signal_cpu_int();
+    this->clear_cpu_int();
 }
 
 void GrandCentral::ack_int(uint64_t irq_id, uint8_t irq_line_state) {
