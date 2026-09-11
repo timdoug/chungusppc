@@ -36,6 +36,7 @@ dingusppc.exe
 
 # Ignore files the emulator writes as it runs
 dingusppc-screen.bmp
+dingusppc-screen.png
 dingusppc-input.txt
 
 # Ignore system files
