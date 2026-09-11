@@ -1,4 +1,16 @@
-The MESH is a SCSI controller used in Power Mac machines.
+The MESH is a SCSI controller used in Power Mac machines. Its register and
+interrupt semantics are specified in chapter 12 of the
+[CHRP I/O Device Reference](https://www.bitsavers.org/pdf/apple/powerpc/CHRP/chrp_io.pdf).
+
+The ROM-independent regression test exercises interrupt masking, command
+completion, exception acknowledgement, and repeated selection timeouts on an
+empty bus:
+
+```
+cmake -S . -B build -DDPPC_BUILD_DEVICE_TESTS=ON
+cmake --build build --target testmesh
+ctest --test-dir build -R '^mesh$' --output-on-failure
+```
 
 # Registers
 
@@ -41,6 +53,6 @@ The MESH is a SCSI controller used in Power Mac machines.
 | DISABLE_RESELECT | 0xD    |
 | RESET_MESH       | 0xE    |
 | FLUSH_FIFO       | 0xF    |
-| SEQ_DMA          | 0x20   |
+| SEQ_DMA          | 0x80   |
 | SEQ_TARGET       | 0x40   |
-| SEQ_ATN          | 0x80   |
+| SEQ_ATN          | 0x20   |

@@ -106,8 +106,6 @@ uint8_t MeshController::read(uint8_t reg_offset) {
 }
 
 void MeshController::write(uint8_t reg_offset, uint8_t value) {
-    //uint16_t new_stat;
-
     switch(reg_offset) {
     case MeshReg::XferCount0:
         this->xfer_count = (this->xfer_count & ~0xFFU) | value;
@@ -128,10 +126,12 @@ void MeshController::write(uint8_t reg_offset, uint8_t value) {
         this->update_bus_status((this->bus_stat & 0xFFU) | (value << 8));
         break;
     case MeshReg::IntMask:
-        this->int_mask = value;
+        this->int_mask = value & INT_MASK;
         update_irq();
         break;
     case MeshReg::Interrupt:
+        if (value & INT_EXCEPTION)
+            this->exception = 0;
         this->int_stat &= ~(value & INT_MASK); // clear requested interrupt bits
         update_irq();
         break;
@@ -157,19 +157,18 @@ void MeshController::perform_command(const uint8_t cmd) {
     this->cur_cmd = cmd;
 
     this->int_stat &= ~INT_CMD_DONE;
+    update_irq();
 
     this->is_dma_cmd = !!(this->cur_cmd & 0x80);
 
     switch (this->cur_cmd & 0xF) {
     case SeqCmd::Arbitrate:
-        this->exception &= EXC_ARB_LOST;
         this->bus_obj->release_ctrl_lines(this->src_id);
         this->cur_state = Scsi_Bus_Controller::SeqState::BUS_FREE;
         this->sequencer();
         break;
     case SeqCmd::Select:
         this->assert_atn = !!(this->cur_cmd & 0x20);
-        this->exception &= EXC_SEL_TIMEOUT;
         this->cur_state = Scsi_Bus_Controller::SeqState::SEL_BEGIN;
         this->sequencer();
         break;
@@ -241,13 +240,12 @@ void MeshController::perform_command(const uint8_t cmd) {
     case SeqCmd::DisParityCheck:
         this->check_parity = false;
         break;
+    // Reselection control commands do not generate command-done interrupts.
     case SeqCmd::EnaReselect:
         LOG_F(9, "MESH: EnaReselect stub invoked");
-        this->int_stat |= INT_CMD_DONE;
         break;
     case SeqCmd::DisReselect:
         LOG_F(9, "MESH: DisReselect stub invoked");
-        this->int_stat |= INT_CMD_DONE;
         break;
     case SeqCmd::ResetMesh:
         this->reset(false);
