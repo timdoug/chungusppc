@@ -82,6 +82,8 @@ enum : uint64_t {
 /** DMA interrupt bits. */
 enum : uint64_t {
     DMA0_INT_SHIFT      = 24,
+        DMA0_INT_ENET_RX = 1 << 4,
+        DMA0_INT_ENET_TX = 1 << 5,
     DMA1_INT_SHIFT      = 32,
         DMA1_INT_SOUND  = 1 << 1,
 };
@@ -288,6 +290,12 @@ enum AMICReg : uint32_t {
     //Ethernet DMA
     Enet_DMA_Xmt_Ctrl   = 0x31C20,
     Enet_DMA_Rcv_Ctrl   = 0x32028,
+    Enet_Rcv_Head       = 0x32030,
+    Enet_Rcv_Tail       = 0x32034,
+    Enet_Xmt_Count0_Hi  = 0x32044,
+    Enet_Xmt_Count0_Lo  = 0x32045,
+    Enet_Xmt_Count1_Hi  = 0x32054,
+    Enet_Xmt_Count1_Lo  = 0x32055,
 
     // SCSI DMA registers
     SCSI_DMA_Base_0     = 0x32000,
@@ -377,6 +385,16 @@ protected:
     void update_native_irq();
 
 private:
+    bool enet_receive(const uint8_t *frame, int len);
+    void enet_transmit();
+    void enet_dma_control(bool receive, uint8_t value);
+    void update_enet_dma_irq();
+
+    uint8_t enet_rx_ctrl = 0, enet_tx_ctrl = 0;
+    uint8_t enet_rx_head = 0, enet_rx_tail = 0;
+    uint16_t enet_tx_count[2] = {};
+    bool enet_rx_irq = false, enet_tx_irq = false;
+
     uint8_t imm_snd_regs[4]; // temporary storage for sound control registers
 
     uint8_t     emmo_pin; // EMMO aka factory tester pin status, active low

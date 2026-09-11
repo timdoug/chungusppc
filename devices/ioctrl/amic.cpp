@@ -44,6 +44,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <cinttypes>
 #include <loguru.hpp>
 #include <memory>
+#include <cstring>
+
+namespace {
+// Six station-address bytes, a reserved byte, and XOR checksum. The address
+// PROM presents each byte bit-reversed, at a 16-byte stride.
+constexpr uint8_t enet_prom[] = {0x08, 0x00, 0x07, 0x61, 0x00, 0x01, 0x00, 0x90};
+constexpr uint8_t ENET_DMA_IF = 0x80, ENET_DMA_IE = 0x08, ENET_DMA_RUN = 0x02;
+constexpr uint8_t ENET_RX_OVERRUN = 0x40;
+constexpr unsigned ENET_RX_SIZE = 0xC000, ENET_RX_PAGES = ENET_RX_SIZE / 256;
+}
 
 AMIC::AMIC() : MMIODevice()
 {
@@ -73,6 +83,12 @@ AMIC::AMIC() : MMIODevice()
 
     // connect Ethernet HW
     this->mace = dynamic_cast<MaceController*>(gMachineObj->get_comp_by_name("Mace"));
+    this->mace->set_mac_address(enet_prom);
+    this->mace->register_enet_int(this, this->register_dev_int(IntSrc::ETHERNET));
+    this->mace->set_packet_dma([this](const uint8_t *frame, int len) {
+        return this->enet_receive(frame, len);
+    });
+    this->mace->set_backend(create_enet_backend(GET_STR_PROP("enet_backend")));
 
     // connect Cuda
     this->viacuda = dynamic_cast<ViaCuda*>(gMachineObj->get_comp_by_name("ViaCuda"));
@@ -140,8 +156,12 @@ uint32_t AMIC::read(uint32_t rgn_start, uint32_t offset, int size)
         return 0;
     case 0x8:
     case 0x9:
-        LOG_F(WARNING, "AMIC Ethernet ID Rom read  @%x.%c", offset, SIZE_ARG(size));
-        return 0;
+    {
+        uint8_t val = enet_prom[(offset >> 4) & 7];
+        val = (val >> 4) | (val << 4);
+        val = ((val & 0xCC) >> 2) | ((val & 0x33) << 2);
+        return ((val & 0xAA) >> 1) | ((val & 0x55) << 1);
+    }
     case 0xA: // MACE registers
         return this->mace->read((offset >> 4) & 0x1F);
     case 0x10: // SCSI registers
@@ -217,6 +237,20 @@ uint32_t AMIC::read(uint32_t rgn_start, uint32_t offset, int size)
         return (this->dma_base >> (3 - (offset & 3)) * 8) & 0xFF;
     case AMICReg::SCSI_DMA_Ctrl:
         return this->curio_dma->read_stat();
+    case AMICReg::Enet_DMA_Xmt_Ctrl:
+        return this->enet_tx_ctrl;
+    case AMICReg::Enet_DMA_Rcv_Ctrl:
+        return this->enet_rx_ctrl;
+    case AMICReg::Enet_Rcv_Head:
+        return this->enet_rx_head;
+    case AMICReg::Enet_Rcv_Tail:
+        return this->enet_rx_tail;
+    case AMICReg::Enet_Xmt_Count0_Hi:
+    case AMICReg::Enet_Xmt_Count1_Hi:
+        return this->enet_tx_count[(offset >> 4) & 1] >> 8;
+    case AMICReg::Enet_Xmt_Count0_Lo:
+    case AMICReg::Enet_Xmt_Count1_Lo:
+        return this->enet_tx_count[(offset >> 4) & 1] & 0xFF;
     case AMICReg::Floppy_Addr_Ptr_0:
     case AMICReg::Floppy_Addr_Ptr_1:
     case AMICReg::Floppy_Addr_Ptr_2:
@@ -403,8 +437,24 @@ void AMIC::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
         LOG_F(9, "AMIC: DMA base address set to 0x%X", this->dma_base);
         break;
     case AMICReg::Enet_DMA_Xmt_Ctrl:
-        LOG_F(INFO, "AMIC Ethernet Transmit DMA Ctrl updated, val=%x", value);
+        this->enet_dma_control(false, value);
         break;
+    case AMICReg::Enet_Rcv_Tail:
+        if (value < ENET_RX_PAGES)
+            this->enet_rx_tail = value;
+        break;
+    case AMICReg::Enet_Xmt_Count0_Hi:
+    case AMICReg::Enet_Xmt_Count1_Hi: {
+        auto &count = this->enet_tx_count[(offset >> 4) & 1];
+        count = (count & 0xFF) | ((value & 0xF) << 8);
+        break;
+    }
+    case AMICReg::Enet_Xmt_Count0_Lo:
+    case AMICReg::Enet_Xmt_Count1_Lo: {
+        auto &count = this->enet_tx_count[(offset >> 4) & 1];
+        count = (count & 0xF00) | (value & 0xFF);
+        break;
+    }
     case AMICReg::SCSI_DMA_Base_0:
     case AMICReg::SCSI_DMA_Base_1:
     case AMICReg::SCSI_DMA_Base_2:
@@ -428,7 +478,7 @@ void AMIC::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
         this->curio_dma->write_ctrl(value);
         break;
     case AMICReg::Enet_DMA_Rcv_Ctrl:
-        LOG_F(INFO, "AMIC Ethernet Receive DMA Ctrl updated, val=%x", value);
+        this->enet_dma_control(true, value);
         break;
     case AMICReg::Floppy_Addr_Ptr_2:
     case AMICReg::Floppy_Addr_Ptr_3:
@@ -484,6 +534,108 @@ void AMIC::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
         LOG_F(WARNING, "Unknown AMIC register write, offset=%x, val=%x",
                 offset, value);
     }
+}
+
+// AMIC packet DMA layout follows the PDM driver in Mach's POWERMAC/if_mace.c
+// and enet_dma.h: a 48 KiB receive ring and transmit buffers at +14000/+14800.
+void AMIC::enet_dma_control(bool receive, uint8_t value) {
+    auto &ctrl = receive ? this->enet_rx_ctrl : this->enet_tx_ctrl;
+    if (value & 1) {
+        ctrl = 0;
+        if (receive) {
+            this->enet_rx_head = this->enet_rx_tail = 0;
+        } else {
+            this->enet_tx_count[0] = this->enet_tx_count[1] = 0;
+        }
+    } else {
+        // Status flags are write-one-to-clear; RUN and IE are ordinary bits.
+        ctrl &= ~(value & (receive ? 0xC0 : 0xE0));
+        if (!receive && (value & ENET_DMA_IF))
+            ctrl &= ~0x60; // acknowledge the completed transmit sets as well
+        ctrl = (ctrl & 0xF0) | (value & (ENET_DMA_RUN | ENET_DMA_IE));
+    }
+    this->update_enet_dma_irq();
+    if (!receive && (ctrl & ENET_DMA_RUN))
+        this->enet_transmit();
+}
+
+void AMIC::update_enet_dma_irq() {
+    bool rx = (this->enet_rx_ctrl & (ENET_DMA_IF | ENET_DMA_IE)) ==
+              (ENET_DMA_IF | ENET_DMA_IE);
+    bool tx = (this->enet_tx_ctrl & (ENET_DMA_IF | ENET_DMA_IE)) ==
+              (ENET_DMA_IF | ENET_DMA_IE);
+    if (rx != this->enet_rx_irq) {
+        this->enet_rx_irq = rx;
+        this->ack_dma_int(DMA0_INT_ENET_RX << DMA0_INT_SHIFT, rx);
+    }
+    if (tx != this->enet_tx_irq) {
+        this->enet_tx_irq = tx;
+        this->ack_dma_int(DMA0_INT_ENET_TX << DMA0_INT_SHIFT, tx);
+    }
+}
+
+void AMIC::enet_transmit() {
+    for (unsigned set = 0; set < 2; ++set) {
+        unsigned count = this->enet_tx_count[set];
+        if (!count)
+            continue;
+        this->enet_tx_count[set] = 0;
+        if (count > ENET_MAX_FRAME_SIZE) {
+            LOG_F(WARNING, "AMIC: invalid Ethernet transmit count %u", count);
+            continue;
+        }
+        auto mem = mmu_map_dma_mem(this->dma_base + 0x14000 + set * 0x800, count);
+        // Record DMA completion before MACE asserts its transmit interrupt.
+        this->enet_tx_ctrl |= ENET_DMA_IF | (0x20 << set);
+        this->mace->transmit_frame(mem.host_va, count);
+    }
+    this->update_enet_dma_irq();
+}
+
+bool AMIC::enet_receive(const uint8_t *frame, int len) {
+    if (!(this->enet_rx_ctrl & ENET_DMA_RUN))
+        return false;
+
+    // Backends omit the wire FCS. AMIC stores it and an eight-byte status
+    // header, then rounds the next packet's position to a 256-byte boundary.
+    unsigned frame_len = std::max(len, 60);
+    unsigned stored_len = frame_len + 4;
+    unsigned pages = (8 + stored_len + 255) / 256;
+    unsigned free_pages = (this->enet_rx_tail + ENET_RX_PAGES - this->enet_rx_head)
+                          % ENET_RX_PAGES;
+    if (!free_pages)
+        free_pages = ENET_RX_PAGES;
+    if (pages >= free_pages || (this->enet_rx_ctrl & ENET_RX_OVERRUN)) {
+        this->enet_rx_ctrl |= ENET_DMA_IF | ENET_RX_OVERRUN;
+        this->update_enet_dma_irq();
+        return true;
+    }
+
+    std::vector<uint8_t> packet(8 + stored_len, 0);
+    packet[0] = stored_len >> 8;
+    packet[1] = stored_len;
+    std::memcpy(packet.data() + 8, frame, len);
+    uint32_t crc = 0xFFFFFFFF;
+    for (unsigned i = 0; i < frame_len; ++i) {
+        crc ^= packet[8 + i];
+        for (unsigned bit = 0; bit < 8; ++bit)
+            crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320U : 0);
+    }
+    crc = ~crc;
+    for (unsigned i = 0; i < 4; ++i)
+        packet[8 + frame_len + i] = crc >> (8 * i);
+
+    auto mem = mmu_map_dma_mem(this->dma_base, ENET_RX_SIZE);
+    if (!mem.is_writable)
+        return false;
+    unsigned pos = this->enet_rx_head * 256;
+    unsigned first = std::min(unsigned(packet.size()), ENET_RX_SIZE - pos);
+    std::memcpy(mem.host_va + pos, packet.data(), first);
+    std::memcpy(mem.host_va, packet.data() + first, packet.size() - first);
+    this->enet_rx_head = (this->enet_rx_head + pages) % ENET_RX_PAGES;
+    this->enet_rx_ctrl |= ENET_DMA_IF;
+    this->update_enet_dma_irq();
+    return true;
 }
 
 // ======================== Interrupt related stuff ==========================
