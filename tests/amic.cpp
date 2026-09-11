@@ -42,6 +42,7 @@ int main() {
     gMachineSettings["enet_backend"] = std::make_unique<StrProperty>("null");
     gMachineObj = std::make_unique<MachineBase>("AMIC regression test");
     gMachineObj->add_device("Sc53C94", std::make_unique<Sc53C94>());
+    gMachineObj->add_device("Sc53C94_2", Sc53C94::create_secondary());
     gMachineObj->add_device("Swim3", std::make_unique<Swim3::Swim3Ctrl>());
     gMachineObj->add_device("Mace", MaceController::create());
     MemCtrlBase memory;
@@ -92,6 +93,33 @@ int main() {
         write(AMICReg::VIA2_IER, 0x88);
         check(int_pin, "unmasking reasserts the pending native IRQ");
         irq(IntSrc::SCSI_CURIO, false);
+
+        // The 8100 has independent SCSI register banks and VIA2 IRQ lines.
+        write(0x10020, 0xAA);
+        write(0x11020, 0x55);
+        write(0x11020, 0x66);
+        check(read(0x10070) == 1 && read(0x11070) == 2, "SCSI FIFOs are independent");
+        write(0x11030, CMD_CLEAR_FIFO);
+        check(read(0x11070) == 0 && read(0x10020) == 0xAA,
+              "clearing second FIFO preserves first bus data");
+        write(0x100B0, 0x40);
+        write(0x110B0, 0x08);
+        check(read(0x100B0) == 0x40 && read(0x110B0) == 0x08,
+              "both controllers return their own configuration register 2");
+        write(AMICReg::VIA2_IER, 0xC8);
+        irq(IntSrc::SCSI_CURIO, true);
+        irq(IntSrc::SCSI_CURIO2, true);
+        check((read(AMICReg::VIA2_IFR) & 0x48) == 0x48 && int_pin,
+              "both SCSI controllers assert distinct VIA2 bits");
+        irq(IntSrc::SCSI_CURIO, false);
+        check((read(AMICReg::VIA2_IFR) & 0x48) == 0x40 && int_pin,
+              "second SCSI request survives first controller acknowledgement");
+        write(AMICReg::VIA2_IER, 0x40);
+        check(!int_pin, "masking second SCSI request releases CPU");
+        write(AMICReg::VIA2_IER, 0xC0);
+        check(int_pin, "unmasking pending second SCSI request asserts CPU");
+        irq(IntSrc::SCSI_CURIO2, false);
+        check(!int_pin, "second SCSI acknowledgement releases CPU");
 
         // MkLinux writes the codec command high byte first, then polls bit 7.
         write(AMICReg::Snd_Ctrl_0, 0);
