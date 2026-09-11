@@ -134,7 +134,7 @@ public:
         this->set_name("MACE");
         this->supports_types(HWCompType::MMIO_DEV | HWCompType::ETHER_MAC);
     }
-    ~MaceController() = default;
+    ~MaceController();
 
     static std::unique_ptr<HWComponent> create() {
         return std::unique_ptr<MaceController>(new MaceController(MACE_ID_REV_A2));
@@ -146,6 +146,12 @@ public:
 
     /** Attach the host side and the interrupt controller this MAC reports to. */
     void set_backend(std::unique_ptr<EthernetBackend> backend);
+    // AMIC transfers complete packets rather than DBDMA descriptors. The
+    // callback returns true when DMA has recorded the packet (or an overrun).
+    void set_packet_dma(std::function<bool(const uint8_t*, int)> receive) {
+        this->packet_dma_receive = std::move(receive);
+    }
+    bool transmit_frame(const uint8_t *frame, int len);
     /** Program the station address the chip powers up with. On real HW the
         boot firmware copies it out of the Ethernet address PROM; drivers then
         read it back from Phys_Addr rather than reading the PROM themselves. */
@@ -173,6 +179,7 @@ private:
     void poll_backend();
 
     std::unique_ptr<EthernetBackend> backend = nullptr;
+    std::function<bool(const uint8_t*, int)> packet_dma_receive;
     InterruptCtrl*  int_ctrl = nullptr;
     uint64_t        irq_id   = 0;
     bool            irq_line = false;
@@ -193,6 +200,8 @@ private:
     uint8_t     addr_cfg      = 0;
     uint8_t     addr_ptr      = 0;
     uint8_t     xmt_fs        = 0;
+    uint8_t     xmt_fc        = 0;
+    uint8_t     user_test     = 0;
     uint8_t     xmt_retry     = 0;
     uint8_t     rcv_fc        = 1;
     uint8_t     rcv_fs        = 0;
