@@ -134,6 +134,9 @@ bool g_realtime = false;
 uint64_t g_nanoseconds_base;
 uint64_t g_icycles;
 int      icnt_factor;
+static uint64_t icnt_default_period_ns = 16;
+static uint64_t icnt_period_ns = 16;
+static uint64_t icnt_time_offset_ns = 0;
 
 /* global variables related to the timebase facility */
 uint64_t tbr_wr_timestamp;  // stores vCPU virtual time of the last TBR write
@@ -356,7 +359,7 @@ uint64_t get_virt_time_ns()
     if (g_realtime) {
         return cpu_now_ns() - g_nanoseconds_base;
     } else {
-        return g_icycles << icnt_factor;
+        return icnt_time_offset_ns + g_icycles * icnt_period_ns;
     }
 }
 
@@ -365,7 +368,8 @@ void set_virt_time_ns(uint64_t time_now)
     if (g_realtime) {
         g_nanoseconds_base = cpu_now_ns() - time_now - 5000;
     } else {
-        g_icycles = time_now >> icnt_factor;
+        g_icycles = time_now / icnt_period_ns;
+        icnt_time_offset_ns = time_now % icnt_period_ns;
     }
     uint64_t time_new = get_virt_time_ns();
     if (g_realtime && time_new > time_now) {
@@ -384,7 +388,7 @@ static uint64_t process_events()
         // if there are no pending timers
         return g_icycles + 25000;
     }
-    return g_icycles + (slice_ns >> icnt_factor) + 1;
+    return g_icycles + (slice_ns / icnt_period_ns) + 1;
 }
 
 static void force_cycle_counter_reload()
@@ -393,10 +397,18 @@ static void force_cycle_counter_reload()
     exec_timer = true;
 }
 
+static void update_icnt_period()
+{
+    // Keep the speed keys relative to the machine's initial instruction period.
+    icnt_period_ns = std::max<uint64_t>(1, (icnt_default_period_ns << icnt_factor) >> 4);
+}
+
 int increment_icnt_factor()
 {
     uint64_t time_now = get_virt_time_ns();
-    icnt_factor += 1;
+    if (icnt_factor < 31)
+        icnt_factor += 1;
+    update_icnt_period();
     set_virt_time_ns(time_now);
     force_cycle_counter_reload();
     return icnt_factor;
@@ -407,6 +419,7 @@ int decrement_icnt_factor()
     if (icnt_factor > 0) {
         uint64_t time_now = get_virt_time_ns();
         icnt_factor -= 1;
+        update_icnt_period();
         set_virt_time_ns(time_now);
         force_cycle_counter_reload();
     }
@@ -993,7 +1006,8 @@ void initialize_ppc_opcode_table() {
     }
 }
 
-void ppc_cpu_init(MemCtrlBase* mem_ctrl, uint32_t cpu_version, bool do_include_601, uint64_t tb_freq)
+void ppc_cpu_init(MemCtrlBase* mem_ctrl, uint32_t cpu_version, bool do_include_601, uint64_t tb_freq,
+                  uint32_t instruction_period_ns)
 {
     mem_ctrl_instance = mem_ctrl;
 
@@ -1039,19 +1053,10 @@ void ppc_cpu_init(MemCtrlBase* mem_ctrl, uint32_t cpu_version, bool do_include_6
     g_nanoseconds_base = cpu_now_ns();
     g_icycles = 0;
 
-//                    //                                        // PDM cpu clock calculated at 0x403036CC in r3
-//  icnt_factor = 11; // 1 instruction = 2048 ns =    0.488 MHz // 00068034 =     0.426036 MHz = 2347.219 ns // floppy doesn't work
-//  icnt_factor = 10; // 1 instruction = 1024 ns =    0.977 MHz // 000D204C =     0.860236 MHz = 1162.471 ns //  [0..10] MHz = invalid clock for PDM gestalt calculation
-//  icnt_factor =  9; // 1 instruction =  512 ns =    1.953 MHz // 001A6081 =     1.728641 MHz =  578.489 ns //  [0..10] MHz = invalid clock for PDM gestalt calculation
-//  icnt_factor =  8; // 1 instruction =  256 ns =    3.906 MHz // 0034E477 =     3.466359 MHz =  288.487 ns //  [0..10] MHz = invalid clock for PDM gestalt calculation
-//  icnt_factor =  7; // 1 instruction =  128 ns =    7.813 MHz // 0069E54C =     6.939980 MHz =  144.092 ns //  [0..10] MHz = invalid clock for PDM gestalt calculation
-//  icnt_factor =  6; // 1 instruction =   64 ns =   15.625 MHz // 00D3E6F5 =    13.887221 MHz =   72.008 ns // (10..60] = 50, (60..73] = 66, (73..100] = 80 MHz
-//  icnt_factor =  5; // 1 instruction =   32 ns =   31.250 MHz // 01A7B672 =    27.768434 MHz =   36.012 ns //
-    icnt_factor =  4; // 1 instruction =   16 ns =   62.500 MHz // 034F0F0F =    55.512847 MHz =   18.013 ns // 6100/60 in Apple System Profiler
-//  icnt_factor =  3; // 1 instruction =    8 ns =  125.000 MHz // 069E1E1E =   111.025694 MHz =    9.006 ns // (100...) MHz = invalid clock for PDM gestalt calculation
-//  icnt_factor =  2; // 1 instruction =    4 ns =  250.000 MHz // 0D3C3C3C =   222.051388 MHz =    4.503 ns // (100...) MHz = invalid clock for PDM gestalt calculation
-//  icnt_factor =  1; // 1 instruction =    2 ns =  500.000 MHz // 1A611A7B =   442.571387 MHz =    2.259 ns // (100...) MHz = invalid clock for PDM gestalt calculation
-//  icnt_factor =  0; // 1 instruction =    1 ns = 1500.000 MHz // 3465B2D9 =   879.080153 MHz =    1.137 ns // (100...) MHz = invalid clock for PDM gestalt calculation
+    icnt_factor = 4;
+    icnt_default_period_ns = std::max<uint32_t>(1, instruction_period_ns);
+    icnt_time_offset_ns = 0;
+    update_icnt_period();
 
     tbr_wr_timestamp = 0;
     rtc_timestamp = 0;
