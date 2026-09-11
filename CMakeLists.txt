@@ -50,6 +50,7 @@ if (EMSCRIPTEN)
 endif()
 
 option(DPPC_BUILD_PPC_TESTS  "Build PowerPC tests" OFF)
+option(DPPC_BUILD_DEVICE_TESTS "Build device regression tests" OFF)
 option(DPPC_BUILD_BENCHMARKS "Build benchmarking programs" OFF)
 
 option(DPPC_68K_DEBUGGER   "Enable 68k debugging" OFF)
@@ -261,6 +262,20 @@ endif()
 
 if (DPPC_HAVE_SLIRP)
     target_link_libraries(dingusppc PRIVATE ${SLIRP_LINK_LIBRARIES})
+endif()
+
+if (DPPC_BUILD_DEVICE_TESTS)
+    enable_testing()
+    add_executable(testmesh tests/mesh.cpp
+        $<TARGET_OBJECTS:core>
+        $<TARGET_OBJECTS:cpu_ppc>
+        $<TARGET_OBJECTS:debugger>
+        $<TARGET_OBJECTS:devices>
+        $<TARGET_OBJECTS:machines>
+        $<TARGET_OBJECTS:utils>
+        $<TARGET_OBJECTS:loguru>)
+    target_link_libraries(testmesh PRIVATE $<TARGET_PROPERTY:dingusppc,LINK_LIBRARIES>)
+    add_test(NAME mesh COMMAND testmesh)
 endif()
 
 if (DPPC_BUILD_PPC_TESTS)
