@@ -32,6 +32,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using namespace MaceEnet;
 
+MaceController::~MaceController() {
+    if (this->poll_timer_id)
+        TimerManager::get_instance()->cancel_timer(this->poll_timer_id);
+    if (this->backend)
+        this->backend->stop();
+}
+
 uint8_t MaceController::read(uint8_t reg_offset)
 {
     switch (reg_offset) {
@@ -39,6 +46,10 @@ uint8_t MaceController::read(uint8_t reg_offset)
         return 0; //No FIFO yet
     case MaceReg::Rcv_Frame_Ctrl:
         return this->rcv_fc;
+    case MaceReg::Xmit_Frame_Ctrl:
+        return this->xmt_fc;
+    case MaceReg::User_Test:
+        return this->user_test;
     case MaceReg::Xmit_Frame_Stat:
         return this->xmt_fs;
     case MaceReg::Xmit_Retry_Cnt:
@@ -112,8 +123,15 @@ void MaceController::write(uint8_t reg_offset, uint8_t value)
     case MaceReg::Rcv_Frame_Ctrl:
         this->rcv_fc = value;
         break;
+    case MaceReg::Xmit_Frame_Ctrl:
+        this->xmt_fc = value;
+        break;
+    case MaceReg::User_Test:
+        this->user_test = value;
+        break;
     case MaceReg::Interrupt_Mask:
         this->int_mask = value;
+        this->update_irq();
         break;
     case MaceReg::BIU_Config_Ctrl:
         if (value & BIU_SWRST) {
@@ -122,6 +140,10 @@ void MaceController::write(uint8_t reg_offset, uint8_t value)
             this->int_stat      = 0;
             this->int_mask      = 0xFF; // reset masks every interrupt again
             this->xmt_frame_len = 0;
+            this->xmt_fs = 0;
+            this->rcv_queue.clear();
+            this->rcv_frame.clear();
+            this->rcv_pos = 0;
             this->update_irq();
         }
         this->biu_ctrl = value;
@@ -133,9 +155,13 @@ void MaceController::write(uint8_t reg_offset, uint8_t value)
         this->mac_cc = value;
         break;
     case MaceReg::PLS_Config_Ctrl:
-        if (value != 7)
+        this->pls_cc = value;
+        if (value != 0 && value != 7) // PDM uses AUI; PCI machines use GPSI.
             LOG_F(WARNING, "%s: unsupported transceiver interface 0x%X in PLSCC",
                   this->name.c_str(), value);
+        break;
+    case MaceReg::PHY_Config_Ctrl:
+        this->phy_cc = value;
         break;
     case MaceReg::Int_Addr_Config:
         if ((value & IAC_LOGADDR) && (value & IAC_PHYADDR))
@@ -249,6 +275,12 @@ void MaceController::receive_frame(const uint8_t *frame, int len) {
     if (!(this->mac_cc & MaceEnet::MACCC_ENRCV) || !this->accept_frame(frame, len))
         return;
 
+    if (this->packet_dma_receive) {
+        if (this->packet_dma_receive(frame, len))
+            this->set_int_flags(MaceEnet::IR_RCVINT);
+        return;
+    }
+
     if (this->rcv_queue.size() >= MACE_MAX_RCV_QUEUE) {
         // No room left: count it the way the chip does rather than grow forever.
         if (this->missed_pkts != 0xFF)
@@ -335,26 +367,21 @@ int MaceController::xfer_to(DmaChannel *ch_obj, uint8_t *buf, int len) {
     // The transmit list ends each frame with an OUTPUT_LAST command, so that
     // is where the frame is complete and goes out.
     if (ch_obj->is_last_xfer()) {
-        bool transmitted = false;
-
-        if (!(this->mac_cc & MaceEnet::MACCC_ENXMT)) {
-            LOG_F(9, "%s: transmitter disabled, frame dropped", this->name.c_str());
-        } else if (this->xmt_frame_len > 0) {
-            if (this->backend)
-                this->backend->send_frame(this->xmt_frame, this->xmt_frame_len);
-            transmitted = true;
-        }
-
+        this->transmit_frame(this->xmt_frame, this->xmt_frame_len);
         this->xmt_frame_len = 0;
-
-        // Only a real transmission raises XMTINT, as on the chip.
-        if (transmitted) {
-            this->xmt_fs = MaceEnet::XMTFS_XMTSV; // sent without error
-            this->set_int_flags(MaceEnet::IR_XMTINT);
-        }
     }
 
     return len;
+}
+
+bool MaceController::transmit_frame(const uint8_t *frame, int len) {
+    if (!(this->mac_cc & MaceEnet::MACCC_ENXMT) || len <= 0 || len > ENET_MAX_FRAME_SIZE)
+        return false;
+    if (this->backend)
+        this->backend->send_frame(frame, len);
+    this->xmt_fs = MaceEnet::XMTFS_XMTSV;
+    this->set_int_flags(MaceEnet::IR_XMTINT);
+    return true;
 }
 
 static const PropMap Mace_properties = {

@@ -40,7 +40,8 @@ checksum `9FEB69B3` (file CRC32 `a43fadbc`). The newer install disc used here is
 dingusppc -r -m pm6100 -b "9FEB69B3 - Power Mac 6100 & 7100 & 8100.ROM" \
     --rambank1_size 64 --rambank2_size 64 --mon_id=VGA-SVGA \
     --hdd_img "universal-macos.img:mklinux.img" \
-    --cdr_img "MkLinux R2 RC5.toast"
+    --cdr_img "MkLinux R2 RC5.toast" \
+    --enet_backend=slirp --enet_hostfwd=tcp:2324:23
 ```
 
 Keep `rootdev=/dev/sdb2` for this disk order. To prepare a fresh Mac OS disk,
@@ -56,15 +57,14 @@ universal startup disk. The default instruction timing identifies a 6100/60.
 The emulator fixes needed for this boot are cyclic timer phase preservation,
 AWACS codec busy-bit readback, and AMIC native interrupt delivery. The same
 rebuilt Mach and Linux binaries used on the 7200/7500 work unchanged. AMIC
-Ethernet address-ROM and DMA support remain unimplemented, so the 6100's Linux
-network interface does not come up yet.
+Ethernet uses the MACE controller with a 48 KiB receive ring and two fixed
+transmit buffers. Its address ROM supplies `08:00:07:61:00:01`.
 
-Disable Samba and AppleTalk autostart in the 6100 Linux installation until
-Ethernet is supported. Samba's interface probe can block the Linux server and
-prevent the login prompt from appearing. From a working installation, run
-`chkconfig smb off` and `chkconfig atalk off` before transferring the disk. The
-6100 test disk uses `K91smb` and `K91atalk` in `/etc/rc.d/rc3.d` instead of the
-corresponding `S91` links.
+With `--enet_backend=slirp`, configure `eth0` for DHCP; the guest receives
+`10.0.2.15`, gateway `10.0.2.2`, and DNS `10.0.2.3`. The example forwards host
+`127.0.0.1:2324` to the guest's telnet port. No additional Mach or Linux patches
+are needed for networking. Samba and AppleTalk can remain enabled at startup;
+the earlier workaround disabling their `S91` boot links is no longer needed.
 
 ## 1. Create the disks
 
