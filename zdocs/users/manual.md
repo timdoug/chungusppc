@@ -234,6 +234,16 @@ key Control+C
 Keys are handed to the guest one press or release per event poll, so its
 keyboard driver sees each transition separately.
 
+`tools/dppc-drive.sh` wraps both: it types its arguments and then captures the
+screen. Run it from the emulator's working directory.
+
+```
+tools/dppc-drive.sh 'text root' 'key RETURN'
+```
+
+Once the guest has networking, `tools/dppc-shell.py` is easier still — it runs
+commands over telnet and prints their output, given `--enet_hostfwd=tcp:2323:23`.
+
 ## Accessing Open Firmware
 
 After booting from a PCI Power Mac ROM without any disk images, enter the debugger and change the NVRAM property `auto-boot?` to false. Exit out of the emulator and boot it back up to access it.
