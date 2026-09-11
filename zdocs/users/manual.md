@@ -78,7 +78,7 @@ Start the guest RTC on the given date, using the current local time of day. The 
 --realtime
 ```
 
-Advance the CPU timebase, decrementer, and device timers using elapsed host time, instead of instruction counts. This keeps double click delays, keyboard repeat, sleeps, and timeouts tied to wall time, improving usability of user interfaces. Control-Alt-R toggles this mode while running.
+Advance the CPU timebase, decrementer, and device timers using elapsed host time, instead of instruction counts. This keeps double click delays, keyboard repeat, sleeps, and timeouts tied to wall time, improving usability of user interfaces. Control-Alt-R toggles this mode while running. On the Power Mac 6100, leave this off during startup: the ROM measures CPU speed, and host timing can select an unsupported Mac model. See [the MkLinux 6100 notes](mklinux.md#power-mac-6100).
 
 ```
 --deterministic
