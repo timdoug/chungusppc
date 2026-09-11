@@ -87,16 +87,20 @@ int MachinePdm::initialize(const std::string &id) {
     LOG_F(INFO, "Building machine PDM...");
 
     uint16_t machine_id;
+    uint32_t instruction_period_ns;
 
     // get raw pointer to HMC object
     HMC* hmc_obj = dynamic_cast<HMC*>(gMachineObj->get_comp_by_name("HMC"));
 
     if (id == "pm6100") {
         machine_id = 0x3010;
+        instruction_period_ns = 16;
     } else if (id == "pm7100") {
         machine_id = 0x3012;
+        instruction_period_ns = 13;
     } else if (id == "pm8100") {
         machine_id = 0x3013;
+        instruction_period_ns = 11;
     } else {
         LOG_F(ERROR, "Unknown machine ID: %s!", id.c_str());
         return -1;
@@ -135,8 +139,11 @@ int MachinePdm::initialize(const std::string &id) {
     // aka video direct slot (VDS)
     setup_pds();
 
-    // Init virtual CPU and request MPC601
-    ppc_cpu_init(hmc_obj, PPC_VER::MPC601, true, 7833600ULL);
+    // The PDM ROM measures CPU speed at 0x403036CC and uses it to select the
+    // Gestalt model. 16/13/11 ns per instruction measure about 55.5/68.3/80.7 MHz,
+    // selecting the 6100/60, 7100/66 and 8100/80 respectively. The 601 RTC crystal
+    // stays at 7.8336 MHz on all three machines.
+    ppc_cpu_init(hmc_obj, PPC_VER::MPC601, true, 7833600ULL, instruction_period_ns);
 
     return 0;
 }
