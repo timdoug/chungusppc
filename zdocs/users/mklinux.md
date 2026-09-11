@@ -49,6 +49,12 @@ touches Apple-branded drives. Use **Apple HD SC Setup 7.3.5** from the DR3 CD's
 
 Then run the Mac OS installer and target the new volume.
 
+In Mac OS's **Date & Time** control panel, set the time zone and daylight saving
+setting to match the host, then check the displayed date and time. MkLinux's
+Mach kernel uses the Mac's saved time zone to convert its local hardware clock
+to UTC. An unspecified Mac time zone can leave MkLinux hours off even when the
+Mac's menu clock looks right. Set Linux's time zone to match as well.
+
 ## 3. Install the Mac OS side of MkLinux
 
 From `Mac Files` on the DR3 CD, into your System Folder:

@@ -140,6 +140,9 @@ int main(int argc, char** argv) {
         ->check(CLI::ExistingFile)->capture_default_str();
     auto deterministic_opt = emu->add_flag("--deterministic", is_deterministic,
         "Use deterministic execution");
+    emu->add_flag("--realtime", g_realtime,
+        "Advance emulated timers using host elapsed time")
+        ->excludes(deterministic_opt);
     emu->add_option("--deterministic-mode", deterministic_mode,
         "Select deterministic features (strict or interactive)")
         ->needs(deterministic_opt)

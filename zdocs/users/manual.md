@@ -45,6 +45,15 @@ DingusPPC is operated using the command line interface. As such, we will list th
 Run the emulator (using the interpreter).
 
 ```
+--realtime
+```
+
+Advance emulated timers using host elapsed time from startup. This keeps guest
+clocks from speeding up or slowing down with the instruction rate. Without
+this flag, timing is based on the number of instructions executed.
+Cannot be combined with `--deterministic`.
+
+```
 -d, --debugger
 ```
 
@@ -195,7 +204,7 @@ The debugger is enabled here, due to the presence of `-d`. The CD ROM image will
 
 ## Keyboard Shortcuts
 
-You can use these keyboard commands while the emulator is running in real-time mode:
+You can use these keyboard commands while the emulator is running:
 
 * Control-G: mouse grab
 * Control-S: scale quality
@@ -203,8 +212,19 @@ You can use these keyboard commands while the emulator is running in real-time m
 * Control-Shift-F: fullscreen reverse
 * Control-+: bigger
 * Control--: smaller
+* Control-Alt-R: toggle host real-time timing (Control-Option-R on macOS)
 * Control-L: log toggle
 * Control-D: debugger
+
+The percentage in the window title is display magnification: `200%` means
+each guest pixel is displayed at twice its original size in each direction.
+
+By default, emulated timers advance with the number of instructions executed.
+Guest clocks can therefore run faster or slower than host time as the workload
+changes. Control-Alt-R switches those timers to host elapsed time; the log
+reports `g_realtime: enabled` or `disabled`. This toggle lasts for the emulator
+process. Pass `--realtime` to start with host elapsed time on every launch.
+The `-r` command-line option only skips the debugger at startup.
 
 ## Driving the emulator from outside
 
