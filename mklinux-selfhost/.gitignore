@@ -1,0 +1,10 @@
+# Keep the two original archives locally for offline reproduction.
+/sources/osfmk.tar.gz
+/sources/linux-2.0.40.tar.xz
+# prepare-sources.py removes its extracted trees when finished.
+/work/
+/dist/
+/debug/
+__pycache__/
+# The repository-wide build-* rule would hide this source script.
+!/rebase-2.0.40/build-server.sh
