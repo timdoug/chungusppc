@@ -52,6 +52,9 @@ Advance emulated timers using host elapsed time from startup. This keeps guest
 clocks from speeding up or slowing down with the instruction rate. Without
 this flag, timing is based on the number of instructions executed.
 Cannot be combined with `--deterministic`.
+On the Power Mac 6100, leave this off during startup: the ROM measures CPU
+speed, and host timing can select an unsupported Mac model. See
+[the MkLinux 6100 notes](mklinux.md#power-mac-6100).
 
 ```
 -d, --debugger
