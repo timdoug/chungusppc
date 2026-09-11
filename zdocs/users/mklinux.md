@@ -29,10 +29,11 @@ names below become `/dev/scsi1.0` and `/dev/scsi1.1`. The Linux disk remains
 `sdb`, and the installed root device remains `/dev/sdb2`. Leave `--hdd_img2`
 and `--cdr_img2` empty for this configuration.
 
-## Power Mac 6100
+## Power Mac 6100, 7100 and 8100
 
-The rebuilt Mach kernel and Linux 2.0.40 server also boot on `pm6100` with a
-universal Mac OS 7.6.1 installation and the R2 booter. The tested ROM has Apple
+The rebuilt Mach kernel and Linux 2.0.40 server also boot on `pm6100`, `pm7100`
+and `pm8100` with a universal Mac OS 7.6.1 installation and the R2 booter.
+The tested ROM has Apple
 checksum `9FEB69B3` (file CRC32 `a43fadbc`). The newer install disc used here is
 `MkLinux R2 RC5.toast`.
 
@@ -49,12 +50,24 @@ choose **Custom Install → Universal system for any supported computer** in the
 7.6 installer, apply the 7.6.1 update, then copy the R2 booter files and rebuilt
 Mach kernel into its System Folder as described below.
 
-Start the 6100 **without `--realtime`**. Its ROM measures CPU speed to select a
+Use `-m pm7100` or `-m pm8100` in the same command to test those models.
+Start all three **without `--realtime`**. Their ROM measures CPU speed to select a
 Mac model. With host elapsed time, a fast emulator can measure above the ROM's
 100 MHz limit and select an unsupported model, causing 7.6.1 to reject even a
-universal startup disk. The default instruction timing identifies a 6100/60.
+universal startup disk. The emulator selects an instruction period for each
+model: 16 ns for the 6100/60, 13 ns for the 7100/66, and 11 ns for the 8100/80.
+Using the 6100's timing on the 7100 produces prototype Gestalt ID 111, which the
+R2 booter rejects with `err=-111`. No additional launch flag is needed for these
+model-specific defaults.
 
-The emulator fixes needed for this boot are cyclic timer phase preservation,
+The 8100 also needs its second SCSI controller, including its DMA channel and
+separate VIA2 interrupt. Leaving that register bank unimplemented hangs Mac OS
+during its SCSI scan. `--hdd_img2` and `--cdr_img2` attach to this controller,
+which MkLinux enumerates as bus 0; the usual `--hdd_img` and `--cdr_img` are on
+bus 1. Keep the second bus's hard-disk list empty to retain `/dev/sdb2` with the
+disk order above. A CD on the second bus works with `--cdr_img2`.
+
+These models also rely on the earlier fixes for cyclic timer phase preservation,
 AWACS codec busy-bit readback, and AMIC native interrupt delivery. The same
 rebuilt Mach and Linux binaries used on the 7200/7500 work unchanged. AMIC
 Ethernet uses the MACE controller with a 48 KiB receive ring and two fixed
@@ -65,6 +78,15 @@ With `--enet_backend=slirp`, configure `eth0` for DHCP; the guest receives
 `127.0.0.1:2324` to the guest's telnet port. No additional Mach or Linux patches
 are needed for networking. Samba and AppleTalk can remain enabled at startup;
 the earlier workaround disabling their `S91` boot links is no longer needed.
+
+The 7100/8100 validation covered booting the rebuilt kernels, DHCP, DNS, ping,
+telnet, checksum-verified 2 MiB Ethernet transfers in both directions, disk
+persistence across shutdown/startup or reboot, CD reads, and clean shutdown.
+Both also completed a guest-initiated reboot with Samba and AppleTalk enabled.
+The 8100's second SCSI bus passed a separate 4 MiB CD checksum comparison;
+hard-disk writes on that bus remain untested. NuBus cards, floppy I/O and audio
+playback are outside this pass. The 6100 was rechecked for boot and Ethernet
+after these emulator changes.
 
 ## 1. Create the disks
 

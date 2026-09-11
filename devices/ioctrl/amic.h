@@ -62,6 +62,8 @@ enum : uint64_t {
     VIA2_INT_SHIFT      = 8,
     VIA2_INT_SCSI_DRQ   = 1 << 0, // (R) SCSI DRQ interrupt
     VIA2_INT_ALL_SLOT   = 1 << 1, // (R) all slot interrupts are signalled here
+    VIA2_INT_SCSI2_DRQ  = 1 << 2, // (R) second SCSI DRQ interrupt
+    VIA2_INT_SCSI2_IRQ  = 1 << 6, // (R) second SCSI IRQ interrupt
     VIA2_INT_SCSI_IRQ   = 1 << 3, // (R) SCSI IRQ interrupt
     VIA2_INT_SOUND      = 1 << 4, // (R) sound chip (AWACS) interrupt
     VIA2_INT_SWIM3      = 1 << 5, // (R) floppy disk controller interrupt
@@ -302,6 +304,11 @@ enum AMICReg : uint32_t {
     SCSI_DMA_Base_1     = 0x32001,
     SCSI_DMA_Base_2     = 0x32002,
     SCSI_DMA_Base_3     = 0x32003,
+    SCSI2_DMA_Base_0    = 0x32004,
+    SCSI2_DMA_Base_1    = 0x32005,
+    SCSI2_DMA_Base_2    = 0x32006,
+    SCSI2_DMA_Base_3    = 0x32007,
+    SCSI2_DMA_Ctrl      = 0x32009,
     SCSI_DMA_Ctrl       = 0x32008,
     SCSI_DMA_Addr_Ptr_0 = 0x32010,
     SCSI_DMA_Addr_Ptr_1 = 0x32011,
@@ -434,6 +441,8 @@ private:
 
     // AMIC subdevice instances
     Sc53C94*            scsi;
+    Sc53C94*            scsi2 = nullptr;
+    uint32_t           scsi2_dma_base = 0;
     EsccController*     escc;
     MaceController*     mace;
     ViaCuda*            viacuda;
@@ -443,6 +452,7 @@ private:
     std::unique_ptr<AmicSndOutDma>      snd_out_dma;
     std::unique_ptr<AmicFloppyDma>      floppy_dma;
     std::unique_ptr<AmicScsiDma>        curio_dma;
+    std::unique_ptr<AmicScsiDma>        scsi2_dma;
     std::unique_ptr<AmicSerialXmitDma>  escc_xmit_b_dma;
     std::unique_ptr<AmicSerialXmitDma>  escc_xmit_a_dma;
     std::unique_ptr<AmicSerialRcvDma>   escc_rcv_b_dma;
