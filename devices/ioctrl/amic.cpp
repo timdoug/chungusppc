@@ -153,6 +153,9 @@ uint32_t AMIC::read(uint32_t rgn_start, uint32_t offset, int size)
     case 0x14: // Sound registers
         switch (offset) {
         case AMICReg::Snd_Ctrl_0:
+            // Codec writes complete synchronously. Bit 7 reports hardware busy
+            // on reads, even though the guest sets it to issue a command.
+            return this->imm_snd_regs[0] & ~0x80;
         case AMICReg::Snd_Ctrl_1:
         case AMICReg::Snd_Ctrl_2:
             return this->imm_snd_regs[offset & 3];
@@ -386,9 +389,10 @@ void AMIC::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
                 LOG_F(5, "AMIC: CPU INT latch cleared");
             }
         }
-        // keep interrupt mode bit
-        // and discard read-only IQR state bits
-        this->int_ctrl |= value & CPU_INT_MODE;
+        // The OS can switch from the ROM's 68k mode to native interrupts.
+        this->int_ctrl = (this->int_ctrl & ~CPU_INT_MODE) | (value & CPU_INT_MODE);
+        if (!(this->int_ctrl & CPU_INT_MODE))
+            this->update_native_irq();
         break;
     case AMICReg::DMA_Base_Addr_0:
     case AMICReg::DMA_Base_Addr_1:
@@ -567,12 +571,12 @@ void AMIC::ack_via2_int(uint8_t via2_int, uint8_t irq_line_state) {
 }
 
 void AMIC::ack_cpu_int(uint8_t cpu_int, uint8_t irq_line_state) {
+    if (irq_line_state) {
+        this->dev_irq_lines |= cpu_int;
+    } else {
+        this->dev_irq_lines &= ~cpu_int;
+    }
     if (this->int_ctrl & CPU_INT_MODE) { // 68k interrupt emulation mode?
-        if (irq_line_state) {
-            this->dev_irq_lines |= cpu_int;
-        } else {
-            this->dev_irq_lines &= ~cpu_int;
-        }
         if (!(this->int_ctrl & CPU_INT_FLAG)) {
             this->int_ctrl |= CPU_INT_FLAG;
             ppc_assert_int();
@@ -582,7 +586,19 @@ void AMIC::ack_cpu_int(uint8_t cpu_int, uint8_t irq_line_state) {
         }
 
     } else {
-        ABORT_F("AMIC: native interrupt mode not implemented");
+        this->update_native_irq();
+    }
+}
+
+void AMIC::update_native_irq() {
+    // Native interrupts remain asserted while any source is pending. In
+    // particular, an ACK must not lose a new request arriving in the handler.
+    if (this->dev_irq_lines & 0x3F) {
+        this->int_ctrl |= CPU_INT_FLAG;
+        ppc_assert_int();
+    } else {
+        this->int_ctrl &= ~CPU_INT_FLAG;
+        ppc_release_int();
     }
 }
 

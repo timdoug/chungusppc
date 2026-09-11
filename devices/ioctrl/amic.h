@@ -374,6 +374,7 @@ protected:
     void ack_via2_int(uint8_t via2_int, uint8_t irq_line_state);
     void ack_cpu_int(uint8_t cpu_int, uint8_t irq_line_state);
     void update_via2_irq();
+    void update_native_irq();
 
 private:
     uint8_t imm_snd_regs[4]; // temporary storage for sound control registers
