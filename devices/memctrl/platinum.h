@@ -322,8 +322,6 @@ protected:
     void disable_display();
     void enable_cursor_int();
     void update_irq(uint8_t irq_line_state, uint8_t irq_mask);
-    template <int depth>
-    void convert_frame_directcolor(uint8_t *dst_buf, int dst_pitch);
 
 private:
     uint32_t    cpu_id;
