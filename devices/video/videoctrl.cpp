@@ -452,3 +452,41 @@ void VideoCtrlBase::convert_frame_32bpp(uint8_t *dst_buf, int dst_pitch, bool sw
 }
 template void VideoCtrlBase::convert_frame_32bpp<VideoCtrlBase::BE>(uint8_t *dst_buf, int dst_pitch, bool swapper);
 template void VideoCtrlBase::convert_frame_32bpp<VideoCtrlBase::LE>(uint8_t *dst_buf, int dst_pitch, bool swapper);
+
+template <int depth>
+void VideoCtrlBase::convert_frame_directcolor(uint8_t *dst_buf, int dst_pitch) {
+    static_assert(depth == 16 || depth == 32);
+    constexpr int component_bits = depth == 16 ? 5 : 8;
+    constexpr uint32_t component_mask = (1U << component_bits) - 1;
+#if SUPPORTS_MEMORY_CTRL_ENDIAN_MODE
+    const bool little_endian = this->needs_swap_endian();
+#else
+    constexpr bool little_endian = false;
+#endif
+
+    // Apple DACula and RaDACal use each RGB field as a CLUT index, including
+    // in RGB555 and xRGB8888 modes. Mac OS programs gamma ramps; MkLinux
+    // puts console palette indices in all three fields instead.
+    for (int y = 0; y < this->active_height; y++) {
+        const uint8_t *src = this->fb_ptr + y * this->fb_pitch;
+        uint8_t *dst = dst_buf + y * dst_pitch;
+        for (int x = 0; x < this->active_width; x++) {
+            uint32_t c;
+            if constexpr (depth == 16) {
+                c = little_endian ? READ_WORD_LE_A(src) : READ_WORD_BE_A(src);
+            } else {
+                c = little_endian ? READ_DWORD_LE_A(src) : READ_DWORD_BE_A(src);
+            }
+            uint32_t r = this->palette[(c >> (2 * component_bits)) & component_mask];
+            uint32_t g = this->palette[(c >> component_bits) & component_mask];
+            uint32_t b = this->palette[c & component_mask];
+            FB_WRITE(dst, 0xFF000000 | (r & 0x00FF0000) |
+                         (g & 0x0000FF00) | (b & 0x000000FF));
+            src += depth / 8;
+            dst += 4;
+        }
+    }
+}
+
+template void VideoCtrlBase::convert_frame_directcolor<16>(uint8_t *dst_buf, int dst_pitch);
+template void VideoCtrlBase::convert_frame_directcolor<32>(uint8_t *dst_buf, int dst_pitch);
