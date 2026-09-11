@@ -29,6 +29,43 @@ names below become `/dev/scsi1.0` and `/dev/scsi1.1`. The Linux disk remains
 `sdb`, and the installed root device remains `/dev/sdb2`. Leave `--hdd_img2`
 and `--cdr_img2` empty for this configuration.
 
+## Power Mac 6100
+
+The rebuilt Mach kernel and Linux 2.0.40 server also boot on `pm6100` with a
+universal Mac OS 7.6.1 installation and the R2 booter. The tested ROM has Apple
+checksum `9FEB69B3` (file CRC32 `a43fadbc`). The newer install disc used here is
+`MkLinux R2 RC5.toast`.
+
+```
+dingusppc -r -m pm6100 -b "9FEB69B3 - Power Mac 6100 & 7100 & 8100.ROM" \
+    --rambank1_size 64 --rambank2_size 64 --mon_id=VGA-SVGA \
+    --hdd_img "universal-macos.img:mklinux.img" \
+    --cdr_img "MkLinux R2 RC5.toast"
+```
+
+Keep `rootdev=/dev/sdb2` for this disk order. To prepare a fresh Mac OS disk,
+choose **Custom Install → Universal system for any supported computer** in the
+7.6 installer, apply the 7.6.1 update, then copy the R2 booter files and rebuilt
+Mach kernel into its System Folder as described below.
+
+Start the 6100 **without `--realtime`**. Its ROM measures CPU speed to select a
+Mac model. With host elapsed time, a fast emulator can measure above the ROM's
+100 MHz limit and select an unsupported model, causing 7.6.1 to reject even a
+universal startup disk. The default instruction timing identifies a 6100/60.
+
+The emulator fixes needed for this boot are cyclic timer phase preservation,
+AWACS codec busy-bit readback, and AMIC native interrupt delivery. The same
+rebuilt Mach and Linux binaries used on the 7200/7500 work unchanged. AMIC
+Ethernet address-ROM and DMA support remain unimplemented, so the 6100's Linux
+network interface does not come up yet.
+
+Disable Samba and AppleTalk autostart in the 6100 Linux installation until
+Ethernet is supported. Samba's interface probe can block the Linux server and
+prevent the login prompt from appearing. From a working installation, run
+`chkconfig smb off` and `chkconfig atalk off` before transferring the disk. The
+6100 test disk uses `K91smb` and `K91atalk` in `/etc/rc.d/rc3.d` instead of the
+corresponding `S91` links.
+
 ## 1. Create the disks
 
 ```
