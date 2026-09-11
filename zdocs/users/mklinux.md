@@ -161,6 +161,69 @@ Afterwards, three things are worth fixing from a console login:
   you want to reach a root shell from the host over `--enet_hostfwd=tcp:2323:23`.
   R2 enables neither by default.
 
+### Getting X running
+
+`startx` fails with `execve failed for /etc/X11/X (errno 2)`, followed by a run of
+`_X11TransSocketUNIXConnect` errors as `xinit` retries against a server that never
+started. Xconfigurator runs during the install and reports `Probing found a:
+Xpmac`, but nothing installs that server: the component list leaves out every
+display server, so only `Xnest`, `Xvfb`, `Xprt` and `Xvnc` are present.
+`/usr/X11R6/bin/X` is a symlink to the setuid `Xwrapper`, which execs
+`/etc/X11/X`, and that is what does not exist.
+
+The server is on the CD. Install it and point `/etc/X11/X` at it:
+
+```
+rpm -ivh /mnt/cdrom/RedHat/RPMS/XFree86-Xpmac-3.3.6-8a.ppc.rpm
+ln -sf /usr/X11R6/bin/Xpmac /etc/X11/X
+```
+
+Take `Xpmac`, not the `XFree86-FBDev` sitting beside it: FBDev wants a Linux
+framebuffer device, and on `osfmach3` the Mach server owns the display. No
+`XF86Config` is needed — Xpmac takes its geometry from the Mach framebuffer — and
+`startx` then brings up GNOME. `id:5:initdefault:` in `/etc/inittab` makes that
+the default, since gdm is installed.
+
+### Browsing the web
+
+Dillo 0.8.5 is installed and is the only graphical browser on either CD. DR3's
+CD carries KDE launchers and app-defaults for Netscape, but not Netscape itself;
+its one graphical browser is `arena`.
+
+Nothing of that vintage can negotiate a modern TLS connection. R2's OpenSSL is
+0.9.6m, which predates SNI and everything else a current server expects. The way
+through is [Crypto Ancienne](https://github.com/classilla/cryanc), a TLS library
+written for pre-C99 compilers and old machines, which speaks TLS 1.2 and 1.3 and
+builds with gcc 2.5 or newer. Its `carl` tool has a proxy mode meant for browsers
+that predate `CONNECT`, so it terminates TLS itself and hands plaintext back:
+
+```
+gcc -O2 -o carl carl.c        # about six minutes on an emulated 601
+cp carl /usr/local/bin/
+echo 'carl 8080/tcp' >> /etc/services
+echo 'carl stream tcp nowait root /usr/local/bin/carl carl -p -t -u' >> /etc/inetd.conf
+killall -HUP inetd
+```
+
+`-u` sends every request over TLS whether or not the URL said `https`, which is
+what lets a browser with no TLS of its own reach a modern site; the cost is that
+a plain HTTP only site no longer loads. `-t` drops the ten second transaction
+timeout. Then set the proxy in `~/.dillo/dillorc`, or in `http_proxy` for `wget`
+and `lynx`:
+
+```
+http_proxy=http://127.0.0.1:8080/
+```
+
+Crypto Ancienne warns off machines slower than about 40 MHz. The emulated 601
+reports 61.64 BogoMIPS and turns a TLS 1.2 fetch around in roughly a second.
+
+Note that `inetd` here does not accept the `address:service` form in
+`/etc/inetd.conf`, so `carl` ends up bound to every interface rather than
+loopback. That is an open proxy for anything that can reach the guest. It is out
+of reach from outside the host as long as the only inbound path is an explicit
+`--enet_hostfwd`, but on a bridged or tap backend it would be exposed.
+
 ## Troubleshooting
 
 **"mount failed: Invalid argument" while installing R2.** The installer skipped
