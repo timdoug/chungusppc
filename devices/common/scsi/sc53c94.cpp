@@ -33,8 +33,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <cinttypes>
 #include <cstring>
 
-Sc53C94::Sc53C94(uint8_t chip_id, uint8_t my_id) : ScsiPhysDevice("SC53C94", my_id), DmaDevice()
+Sc53C94::Sc53C94(uint8_t chip_id, uint8_t my_id, bool secondary)
+    : ScsiPhysDevice("SC53C94", my_id), DmaDevice()
 {
+    this->secondary = secondary;
+    if (secondary)
+        this->set_name("SC53C94-2");
     this->chip_id   = chip_id;
     this->my_bus_id = my_id;
     supports_types(HWCompType::SCSI_HOST | HWCompType::SCSI_DEV);
@@ -43,15 +47,17 @@ Sc53C94::Sc53C94(uint8_t chip_id, uint8_t my_id) : ScsiPhysDevice("SC53C94", my_
 
 int Sc53C94::device_postinit()
 {
-    ScsiBus* bus = dynamic_cast<ScsiBus*>(gMachineObj->get_comp_by_name("ScsiCurio"));
+    ScsiBus* bus = dynamic_cast<ScsiBus*>(gMachineObj->get_comp_by_name(
+        this->secondary ? "ScsiCurio2" : "ScsiCurio"));
     if (bus) {
         bus->register_device(7, static_cast<ScsiPhysDevice*>(this));
-        bus->attach_scsi_devices("");
+        bus->attach_scsi_devices(this->secondary ? "2" : "");
     }
 
     this->int_ctrl = dynamic_cast<InterruptCtrl*>(
         gMachineObj->get_comp_by_type(HWCompType::INT_CTRL));
-    this->irq_id = this->int_ctrl->register_dev_int(IntSrc::SCSI_CURIO);
+    this->irq_id = this->int_ctrl->register_dev_int(
+        this->secondary ? IntSrc::SCSI_CURIO2 : IntSrc::SCSI_CURIO);
 
     return 0;
 }
@@ -84,7 +90,7 @@ void Sc53C94::reset_device()
 
 uint8_t Sc53C94::read(uint8_t reg_offset)
 {
-    uint8_t value;
+    uint8_t value = 0;
 
     switch (reg_offset) {
     case Read::Reg53C94::Xfer_Cnt_LSB:
@@ -127,6 +133,9 @@ uint8_t Sc53C94::read(uint8_t reg_offset)
         break;
     case Read::Reg53C94::Config_1:
         value = this->config1;
+        break;
+    case Read::Reg53C94::Config_2:
+        value = this->config2;
         break;
     case Read::Reg53C94::Config_3:
         value = this->config3;
@@ -891,3 +900,16 @@ static const DeviceDescription Sc53C94_Descriptor = {
 };
 
 REGISTER_DEVICE(Sc53C94, Sc53C94_Descriptor);
+
+// The 8100's second SCSI bus uses the same register and DMA interface.
+static const DeviceDescription ScsiCurio2_Descriptor = {
+    []() -> std::unique_ptr<HWComponent> { return std::make_unique<ScsiBus>("ScsiCurio2"); },
+    {}, {}, HWCompType::SCSI_BUS
+};
+static const DeviceDescription Sc53C94_2_Descriptor = {
+    Sc53C94::create_secondary, {"ScsiCurio2"},
+    {{"hdd_img2", new StrProperty("")}, {"cdr_img2", new StrProperty("")}},
+    HWCompType::SCSI_HOST | HWCompType::SCSI_DEV
+};
+REGISTER_DEVICE(ScsiCurio2, ScsiCurio2_Descriptor);
+REGISTER_DEVICE(Sc53C94_2, Sc53C94_2_Descriptor);

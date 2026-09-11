@@ -182,7 +182,7 @@ static const DeviceDescription MachinePdm7100_descriptor = {
 };
 
 static const DeviceDescription MachinePdm8100_descriptor = {
-    MachinePdm::create8100, pm6100_devices, pm6100_settings
+    MachinePdm::create8100, {"HMC", "Sc53C94_2", "Amic"}, pm6100_settings
 };
 
 REGISTER_DEVICE(MachinePdm6100, MachinePdm6100_descriptor);

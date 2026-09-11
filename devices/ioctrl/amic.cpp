@@ -74,6 +74,16 @@ AMIC::AMIC() : MMIODevice()
         this->update_via2_irq();
     });
 
+    this->scsi2 = dynamic_cast<Sc53C94*>(gMachineObj->get_comp_by_name_optional("Sc53C94_2"));
+    if (this->scsi2) {
+        this->scsi2_dma = std::make_unique<AmicScsiDma>();
+        this->scsi2_dma->connect(this->scsi2);
+        this->scsi2->connect(this->scsi2_dma.get());
+        this->scsi2->set_drq_callback([this](uint8_t state) {
+            this->ack_via2_int(VIA2_INT_SCSI2_DRQ, state & 1);
+        });
+    }
+
     // connect serial HW
     this->escc = dynamic_cast<EsccController*>(gMachineObj->get_comp_by_name("Escc"));
     this->escc_xmit_b_dma = std::unique_ptr<AmicSerialXmitDma>(new AmicSerialXmitDma("EsccBXmit"));
@@ -170,6 +180,11 @@ uint32_t AMIC::read(uint32_t rgn_start, uint32_t offset, int size)
         } else {
             return this->scsi->read((offset >> 4) & 0xF);
         }
+    case 0x11: // 8100 second SCSI controller (absent on 6100/7100)
+        if (!this->scsi2)
+            return 0;
+        return (offset & 0x100) ? this->scsi2->pseudo_dma_read() :
+            this->scsi2->read((offset >> 4) & 0xF);
     case 0x14: // Sound registers
         switch (offset) {
         case AMICReg::Snd_Ctrl_0:
@@ -235,6 +250,8 @@ uint32_t AMIC::read(uint32_t rgn_start, uint32_t offset, int size)
     case AMICReg::DMA_Base_Addr_2:
     case AMICReg::DMA_Base_Addr_3:
         return (this->dma_base >> (3 - (offset & 3)) * 8) & 0xFF;
+    case AMICReg::SCSI2_DMA_Ctrl:
+        return this->scsi2_dma ? this->scsi2_dma->read_stat() : 0;
     case AMICReg::SCSI_DMA_Ctrl:
         return this->curio_dma->read_stat();
     case AMICReg::Enet_DMA_Xmt_Ctrl:
@@ -305,6 +322,14 @@ void AMIC::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
             this->scsi->pseudo_dma_write(value);
         else
             this->scsi->write((offset >> 4) & 0xF, value);
+        return;
+    case 0x11:
+        if (this->scsi2) {
+            if (offset & 0x100)
+                this->scsi2->pseudo_dma_write(value);
+            else
+                this->scsi2->write((offset >> 4) & 0xF, value);
+        }
         return;
     case 0x14: // Sound registers
         switch(offset) {
@@ -455,6 +480,27 @@ void AMIC::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
         count = (count & 0xF00) | (value & 0xFF);
         break;
     }
+    case AMICReg::SCSI2_DMA_Base_0:
+    case AMICReg::SCSI2_DMA_Base_1:
+    case AMICReg::SCSI2_DMA_Base_2:
+    case AMICReg::SCSI2_DMA_Base_3:
+        SET_ADDR_BYTE(this->scsi2_dma_base, offset, value);
+        this->scsi2_dma_base &= 0xFFFFFFF8UL;
+        break;
+    case AMICReg::SCSI2_DMA_Ctrl:
+        if (!this->scsi2_dma)
+            break;
+        if (value & 1)
+            this->scsi2_dma->reset(this->scsi2_dma_base);
+        if (value & 2) {
+            this->scsi2_dma->reinit(this->scsi2_dma_base);
+            if (value & (1 << 6))
+                this->scsi2_dma->xfer_to_device();
+            else
+                this->scsi2_dma->xfer_from_device();
+        }
+        this->scsi2_dma->write_ctrl(value);
+        break;
     case AMICReg::SCSI_DMA_Base_0:
     case AMICReg::SCSI_DMA_Base_1:
     case AMICReg::SCSI_DMA_Base_2:
@@ -650,6 +696,7 @@ uint64_t AMIC::register_dev_int(IntSrc src_id) {
 
     case IntSrc::DMA_SCSI_CURIO: return VIA2_INT_SCSI_DRQ << VIA2_INT_SHIFT;
     case IntSrc::SLOT_ALL      : return VIA2_INT_ALL_SLOT << VIA2_INT_SHIFT;
+    case IntSrc::SCSI_CURIO2   : return VIA2_INT_SCSI2_IRQ << VIA2_INT_SHIFT;
     case IntSrc::SCSI_CURIO    : return VIA2_INT_SCSI_IRQ << VIA2_INT_SHIFT;
     case IntSrc::DAVBUS        : return VIA2_INT_SOUND    << VIA2_INT_SHIFT;
     case IntSrc::SWIM3         : return VIA2_INT_SWIM3    << VIA2_INT_SHIFT;
