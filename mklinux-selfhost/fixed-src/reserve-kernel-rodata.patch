@@ -1,0 +1,30 @@
+--- a/src/mach_kernel/ppc/ppc_init.c
++++ b/src/mach_kernel/ppc/ppc_init.c
+@@ -364,7 +364,26 @@
+         free_regions_count++;
+ 
+ 
+-	free_regions[free_regions_count].start = round_page(&etext);
++	/*
++	 * The linker may put .rodata and .sdata2 after etext in the
++	 * text load segment.  Reserve the complete loaded segment,
++	 * otherwise pmap_steal_memory can overwrite live kernel data.
++	 */
++	addr = round_page(&etext);
++	for (i = 0; i < args->kern_info.region_count; i++) {
++		vm_offset_t region_end;
++
++		if (args->kern_info.regions[i].addr < KERNELBASE_TEXT ||
++		    args->kern_info.regions[i].addr >= KERNELBASE_DATA ||
++		    args->kern_info.regions[i].prot == VM_PROT_NONE)
++			continue;
++		region_end = round_page(args->kern_info.base_addr +
++			args->kern_info.regions[i].offset +
++			args->kern_info.regions[i].size);
++		if (region_end > addr)
++			addr = region_end;
++	}
++	free_regions[free_regions_count].start = addr;
+ 	free_regions[free_regions_count].end   = KERNELBASE_DATA;
+ 
+         avail_remaining += (free_regions[free_regions_count].end - 

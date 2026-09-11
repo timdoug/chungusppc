@@ -1,0 +1,14 @@
+{
+  "osfmk.tar.gz": {
+    "sha256": "0fb62ebe5be2f9f848ecb8598ffb9df041ee16aa3c55fe31f702c0403188823e",
+    "origin": "/usr/src/osfmk.tar.gz from osfmk-src-12.24.99-2.ppc.rpm on MkLinux R2 RC5.toast",
+    "patch": "fixed-src/reserve-kernel-rodata.patch",
+    "patched_file": "src/mach_kernel/ppc/ppc_init.c",
+    "patched_file_sha256": "0b2df359184a33a7b0e7dfeb43c8ffd9f85b4e3af941ca4e0e6e2223ce24df32"
+  },
+  "linux-2.0.40.tar.xz": {
+    "sha256": "4de73a68aa2f9c6813f5eae5bf64e9716c7809cff6e95f06781c6c6e4bc8accc",
+    "url": "https://www.kernel.org/pub/linux/kernel/v2.0/linux-2.0.40.tar.xz",
+    "patch": "rebase-2.0.40/mklinux-on-linux-2.0.40.patch"
+  }
+}
