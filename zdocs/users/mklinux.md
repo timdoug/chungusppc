@@ -184,6 +184,34 @@ framebuffer device, and on `osfmach3` the Mach server owns the display. No
 `startx` then brings up GNOME. `id:5:initdefault:` in `/etc/inittab` makes that
 the default, since gdm is installed.
 
+### Changing the screen resolution
+
+MkLinux has no video mode of its own. The booter reads whatever mode Mac OS is
+in and hands it over, so the resolution is set from Mac OS and inherited:
+`/proc/cmdline` is only `ro`, and there is no `vmode=` anywhere in
+`/mach_servers/vmlinux`.
+
+Start the emulator with a monitor that offers more than 640x480, and enough
+video memory for it:
+
+```
+--mon_id=VGA-SVGA --gfxmem_size=4
+```
+
+`VGA-SVGA` is the only monitor in `displayid.cpp` advertising 800x600; it offers
+1024x768 and higher too. 1 MB of video memory is uncomfortably tight for 800x600
+at 16bpp, hence the 4.
+
+Then boot Mac OS rather than MkLinux, open Monitors, and pick the mode. Two
+things to know: the confirmation dialog's default button is **Cancel**, so
+Return reverts rather than keeps, and the setting backs out on its own after a
+few seconds, which looks exactly like the click not having registered. Select
+and confirm in one go. Booting MkLinux afterwards reports the new mode:
+
+```
+using video mode 9 (800x600 at 56Hz), 16 bits/pixel
+```
+
 ### Browsing the web
 
 Dillo 0.8.5 is installed and is the only graphical browser on either CD. DR3's
