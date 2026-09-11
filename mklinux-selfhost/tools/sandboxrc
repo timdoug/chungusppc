@@ -1,0 +1,7 @@
+	# sandbox rc file created by mksb
+	# default sandbox
+default osfmk
+	# base directories to sandboxes
+base * /usr/src
+	# list of sandboxes
+sb osfmk
