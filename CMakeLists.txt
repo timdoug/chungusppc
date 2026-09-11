@@ -276,6 +276,10 @@ if (DPPC_BUILD_DEVICE_TESTS)
         $<TARGET_OBJECTS:loguru>)
     target_link_libraries(testmesh PRIVATE $<TARGET_PROPERTY:dingusppc,LINK_LIBRARIES>)
     add_test(NAME mesh COMMAND testmesh)
+    add_executable(testtimers tests/timers.cpp core/timermanager.cpp
+        $<TARGET_OBJECTS:loguru>)
+    target_link_libraries(testtimers PRIVATE ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+    add_test(NAME timers COMMAND testtimers)
 endif()
 
 if (DPPC_BUILD_PPC_TESTS)

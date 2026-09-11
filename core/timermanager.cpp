@@ -103,8 +103,13 @@ uint64_t TimerManager::process_timers()
         if (cur_timer->interval_ns) {
             std::lock_guard<std::recursive_mutex> lk(this->timer_queue.get_mtx());
             uint64_t timeout_ns_new = timeout_ns + cur_timer->interval_ns;
-            if (timeout_ns_new <= time_now)
-                timeout_ns_new = time_now + cur_timer->interval_ns;
+            if (timeout_ns_new <= time_now) {
+                // Skip missed periods without shifting the timer's phase.
+                // Otherwise related timers (e.g. VBL start/end) can collapse
+                // onto the same deadline and stop producing observable pulses.
+                timeout_ns_new = time_now + cur_timer->interval_ns -
+                    (time_now - timeout_ns) % cur_timer->interval_ns;
+            }
             cur_timer->timeout_ns = timeout_ns_new;
             this->timer_queue.push(cur_timer);
         }
