@@ -189,6 +189,9 @@ int main(int argc, char** argv) {
             return parse_calendar_date(value) ? std::string() :
                 std::string("Expected a valid date in YYYY-MM-DD format");
         }, "YYYY-MM-DD"));
+    emu->add_flag("--realtime", g_realtime,
+        "Advance emulated timers using host elapsed time")
+        ->excludes(deterministic_opt);
     emu->add_option("--deterministic-mode", deterministic_mode,
         "Select deterministic features (strict or interactive)")
         ->needs(deterministic_opt)
