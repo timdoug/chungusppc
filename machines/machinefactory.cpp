@@ -292,11 +292,13 @@ void MachineFactory::print_settings(const PropMap& prop_map)
 void MachineFactory::register_device_settings(const std::string& name)
 {
     auto dev = DeviceRegistry::get_descriptor(name);
+    // A board's defaults take precedence over its component defaults (for
+    // example, Gazelle populates a PCI slot that the generic host leaves empty).
+    register_settings(dev.properties);
     for (auto& d : dev.subdev_list) {
         register_device_settings(d);
     }
 
-    register_settings(dev.properties);
     if (!dev.properties.empty()) {
         std::cout << "Device " << name << " Settings" << endl
                   << std::string(36, '-') << endl;
@@ -325,8 +327,7 @@ int MachineFactory::register_machine_settings(const std::string& id)
 void MachineFactory::register_settings(const PropMap& props) {
     for (auto& p : props) {
         if (gMachineSettings.count(p.first)) {
-            // This is a hack. Need to implement hierarchical paths and per device properties.
-            LOG_F(ERROR, "Duplicate setting \"%s\".", p.first.c_str());
+            LOG_F(9, "Keeping inherited setting \"%s\".", p.first.c_str());
         }
         else {
             auto clone = p.second->clone();
