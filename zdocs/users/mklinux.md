@@ -29,6 +29,131 @@ names below become `/dev/scsi1.0` and `/dev/scsi1.1`. The Linux disk remains
 `sdb`, and the installed root device remains `/dev/sdb2`. Leave `--hdd_img2`
 and `--cdr_img2` empty for this configuration.
 
+## Power Mac 8500
+
+`pm8500` boots the same rebuilt Mach kernel and Linux 2.0.40 server with its
+default 604 CPU, the `9630C68B` TNT ROM, universal Mac OS 7.6.1 installation
+and R2 booter. Use separate copies of the working disks:
+
+```
+dingusppc -r -m pm8500 -b "9630C68B - Power Mac 7200&7500&8500&9500 v2.ROM" \
+    --rambank1_size 128 --mon_id=VGA-SVGA \
+    --hdd_img "universal-macos.img:mklinux.img" \
+    --cdr_img "MkLinux R2 RC5.toast" --cdr_img2 "MkLinux R2 RC5.toast" \
+    --enet_backend=slirp --enet_hostfwd=tcp:2324:23
+```
+
+As on the 7500, the disks above are on Curio SCSI (Mach bus 1), preserving
+`rootdev=/dev/sdb2`. With a CD on each controller, MESH's CD appears first as
+`/dev/scd0`, followed by Curio's as `/dev/scd1`. The configuration uses
+instruction timing, without `--realtime`.
+
+The 8500 passed login with a color Control-video console, 4 MiB checksum
+comparisons for both SCSI CD paths and filesystem writes, DHCP, DNS, gateway
+ping, a forwarded telnet connection, and checksum-verified 2 MiB Ethernet
+transfers in both directions. A guest reboot returned to login with DHCP and
+the saved file checksums intact; clean shutdown also passed. No additional
+Mach or Linux changes are needed.
+MESH hard-disk writes, the extra composite/S-video hardware, X, audio playback
+and floppy I/O remain untested on this model.
+
+## Later TNT ROM revisions
+
+The later TNT ROMs are both 4 MiB images. Their Apple checksums, firmware
+versions and file CRC32 values distinguish them:
+
+| ROM | Firmware version | File CRC32 | Intended model family |
+| --- | --- | --- | --- |
+| `960E4BE9` (v1) | `077D.34F2` | `7910cdf9` | 7300, 7600, original 8600/9600 |
+| `960FC647` (v2) | `077D.34F5` | `14d126f4` | Enhanced 8600/9600 |
+
+Apple's [enhanced 8600/9600 developer note](https://manualzz.com/doc/1294509/apple-power-macintosh-8600-250--8600-300--9600-300--9600-...)
+describes the later ROM's support for the Mach 5 processor card, its inline
+cache and Brick controller, and higher clock frequencies and multipliers.
+Those models shipped with System 7.6.1. DingusPPC currently selects an ordinary
+604e for these TNT models; loading v2 does not add a Mach 5 processor or model
+its inline-cache hardware.
+
+The `pm7300`, `pm7600` and `pm8600` configurations passed boot, 4 MiB SCSI filesystem
+and CD checksum checks on both controllers, DHCP, DNS, ping, telnet, 2 MiB
+Ethernet transfers in both directions, reboot persistence and clean shutdown
+with v1. Use the 8500 command above with the corresponding model selector and the
+`960E4BE9` ROM. The guest disks, root device, R2 booter and rebuilt Mach/Linux
+binaries remain the same.
+The `pm8600` configuration also passed the same checks with v2, including a
+color console, guest reboot and clean shutdown, using its default 604e CPU.
+
+The current `pm7300` and `pm7600` definitions instantiate the same devices and
+default 604e CPU. Selector tests therefore do not establish distinct board or
+AV-capture implementations for those machines.
+
+The 9500 and 9600 have no built-in Control video. The emulated `AtiMach64Gx`
+PCI card expects `113-32900-004_Apple_MACH64.bin` in the working directory;
+the motherboard ROM does not replace that separate graphics-card ROM.
+The examined `-004` image is byte-for-byte identical to `113-32900-104 Apple
+MACH64.BIN` (MD5 `e6375717e5514ff1f609d3200a7d116c`) and identifies itself
+internally as `113-32900-104`, with `ATY,Mem#=100-31602-00` and
+`ATY,Card#=102-329XX-XX`. The `-101` image is
+different (MD5 `ee7dac510963e74d10f10b15a26d63f5`) and has placeholder internal
+ROM, memory and card numbers (`000-00000-000`). Both distinct images are
+32 KiB and identify the same Mach64 GX PCI device; their filenames do not
+establish different GPU models. Mac OS 7.6.1 was checked with both distinct
+images at 640×480 in 256, Thousands and Millions of colors. The `-101` driver
+also exercises eight-bit host bitmap uploads with an OR raster operation
+when returning to 256 colors; the GX emulation implements that path.
+
+## Power Mac 9500 and 9600 with Mach64 GX
+
+The GX emulation needs a valid chip ID, the Macintosh big-endian framebuffer
+aperture, DAC byte-register readback and the 2D drawing operations used by Mac
+OS. These fixes restore ordinary Mac OS 7.6.1 graphics as well as the MkLinux
+boot path; they do not require changing Mach or Linux. Mac OS on the 9500 was
+checked at 640×480 in 256, Thousands and Millions of colors, including text,
+icons, depth changes and window movement/repainting. See the
+[GX implementation notes](../developers/atimach64gx.md) for remaining limits.
+
+For MkLinux, use 832×624 in 256 colors with the fixed-frequency 16-inch monitor:
+
+```
+dingusppc -r -m pm9500 -b "9630C68B - Power Mac 7200&7500&8500&9500 v2.ROM" \
+    --rambank1_size 128 --mon_id=MacRGB16in --pci_A1=AtiMach64Gx \
+    --hdd_img "universal-macos.img:mklinux.img" \
+    --cdr_img "MkLinux R2 RC5.toast" --cdr_img2 "MkLinux R2 RC5.toast" \
+    --enet_backend=slirp --enet_hostfwd=tcp:2324:23
+```
+
+Place the separate card ROM under the expected filename above in the working
+directory. Use private copies of the universal Mac OS and MkLinux disks; the
+disk order and `rootdev=/dev/sdb2` are unchanged. Start without `--realtime`.
+
+At 640×480 in 256 colors, the tested driver supplies framebuffer address
+`0x81800200`. The existing Linux console mapping omits that address's page
+offset, so clearing the end of the framebuffer crosses the mapping and faults.
+832×624 leaves enough padding in the final mapped page for this offset. This
+is a video-mode workaround for the retained guest binaries, separate from the
+GX emulator fixes; other MkLinux resolutions and direct-color modes remain
+unvalidated.
+
+The 9500 with its default 604 CPU and the `-104` card ROM passed a color login,
+4 MiB filesystem and both SCSI CD checksum checks, DHCP, DNS, gateway ping,
+telnet, 2 MiB Ethernet transfers in both directions, persistence across a
+cold start and guest reboot, and clean shutdown.
+The distinct `-101` card ROM also passed MkLinux login on the 9500 at
+832×624 in 256 colors, the filesystem and both CD checksums, DHCP, DNS, ping,
+telnet, guest-reboot persistence and clean shutdown.
+
+The 9600 with its default 604e CPU also passed the storage, network,
+reboot-persistence and shutdown checks with both motherboard ROM revisions:
+
+| Motherboard ROM | Graphics card ROM | Slot | Framebuffer BAR base |
+| --- | --- | --- | --- |
+| v1 `960E4BE9` | `-104` | `pci_A1` (first Bandit bus) | `0x81000000` |
+| v2 `960FC647` | `-104` | `pci_D2` (second Bandit bus) | `0x90000000` |
+
+Use `-m pm9600`, the corresponding motherboard ROM filename and the tested
+slot flag in the command above. The v2 run exercises the second PCI bus;
+it does not add the enhanced machine's Mach 5/Brick processor-card hardware.
+
 ## Power Mac 6100, 7100 and 8100
 
 The rebuilt Mach kernel and Linux 2.0.40 server also boot on `pm6100`, `pm7100`
@@ -87,6 +212,89 @@ The 8100's second SCSI bus passed a separate 4 MiB CD checksum comparison;
 hard-disk writes on that bus remain untested. NuBus cards, floppy I/O and audio
 playback are outside this pass. The 6100 was rechecked for boot and Ethernet
 after these emulator changes.
+
+## Power Mac 5400 and Performa / Power Mac 6400
+
+`pm5400` and `pm6400` boot the same rebuilt Mach kernel and Linux 2.0.40 server,
+using the universal Mac OS 7.6.1 installation and R2 booter above. Use copies of the
+working disks and the `6F5724C0` Performa 6400 ROM:
+
+```
+dingusppc -r -m pm6400 -b "6F5724C0 - Performa 6400.ROM" \
+    --rambank1_size 32 --rambank2_size 32 \
+    --rambank3_size 32 --rambank4_size 32 --mon_id=VGA-SVGA \
+    --hdd_img2 "universal-macos.img:mklinux.img" \
+    --cdr_img2 "MkLinux R2 RC5.toast"
+```
+
+Use `-m pm5400` with the same Alchemy ROM to run the 5400. Both models use
+MESH for SCSI, so both boot disks belong in `--hdd_img2` and the
+CD in `--cdr_img2`. This retains `rootdev=/dev/sdb2`. Its default `--hdd_img`
+attachment is IDE; a separate scratch image there appears as `/dev/hda` in
+MkLinux. The command above uses instruction timing, without `--realtime`.
+
+MESH needs working DMA writes, accurate transferred-byte counts on reads, and
+a retry when the data command follows DMA startup. Without these, Mac OS can
+hang at Happy Mac on a pending disk write. Valkyrie's 16-bit display also needs
+the CLUT applied separately to each RGB component for console colors. These
+are emulator fixes; the Mach and Linux binaries need no additional patches.
+
+Both models passed 4 MiB checksum comparisons for SCSI filesystem writes,
+raw IDE writes and reads, and MESH CD reads, plus a guest-initiated reboot.
+The 5400 retained its test data after reboot; the 6400 also passed persistence
+across a clean shutdown and cold start. Both shut down cleanly.
+Mac OS's booter and MkLinux's 16-bit console display in color. Booting from IDE,
+X, audio playback and floppy I/O remain untested.
+
+The [6400 specifications](https://support.apple.com/en-ca/112092) list two PCI
+slots and a Comm Slot II, with no built-in Ethernet. Period upgrades included
+Farallon PCI and Comm Slot II 10/100 cards
+([Farallon's announcement](https://www.mactech.com/1998/09/28/npl-farallon-ships-10-100-for-comm-slot-ii/)).
+DingusPPC currently emulates neither kind of Ethernet expansion card, so
+`--enet_backend=slirp` alone cannot provide networking on this model. Mach's
+DEC Tulip driver makes a compatible PCI card a candidate for future emulation;
+the card and Alchemy's PCI slot interrupt routing still need implementation.
+
+## Power Mac 6500, 5500 and Twentieth Anniversary Macintosh
+
+The Gazelle models use the `6E92FE08` ROM (file CRC32 `084646f4`) and onboard
+ATI Rage graphics. MkLinux's [hardware list](https://www.mklinux.org/getting_started/machine.html)
+includes all three models as supported. Keep the universal Mac OS 7.6.1
+installation, R2 booter and rebuilt Mach/Linux binaries. Use separate copies
+of the disks for each model:
+
+```
+dingusppc -r -m pm6500 -b "6E92FE08 - Power Mac 6500.ROM" \
+    --rambank1_size 64 --rambank2_size 64 --mon_id=VGA-SVGA \
+    --hdd_img2 "universal-macos.img:mklinux.img" \
+    --cdr_img2 "MkLinux R2 RC5.toast"
+```
+
+Use `-m pm5500` or `-m tam` for the other Gazelle models. As on the 6400, these
+attachments use MESH SCSI and preserve `rootdev=/dev/sdb2`; a separate scratch
+disk in `--hdd_img` appears as IDE `/dev/hda`. Start without `--realtime`.
+
+Before booting MkLinux, select **Thousands** in the Mac OS **Monitors** control
+panel and restart. At 640×480 in 256 colors, this ROM supplies framebuffer
+address `0x81800480`. The retained Linux console code maps the pixel bytes but
+does not include that page offset, and faults clearing the last part of the
+screen. Thousands works with the existing binaries. This is a tested video-mode
+workaround; it does not establish that all real Gazelle machines failed in
+256-color mode. No guest kernel patch is included for it.
+
+The emulator must retain Gazelle's `pci_F1=AtiRageGT` board default when
+registering generic PCI-host settings. It also needs MESH PIO writes to drain
+each full FIFO burst, and the ATI DAC lookup table applied in RGB555 mode.
+The latter restores MkLinux's console colors. Mac OS's ATI acceleration still
+has incomplete monochrome drawing operations, which can leave text and icons
+missing; this pass does not claim complete graphics acceleration.
+
+The 6500, 5500 and TAM passed login, 4 MiB SCSI filesystem and raw IDE checksum
+comparisons, CD reads, persistence after a guest reboot, and clean shutdown.
+The 6500 also retained its test data across a cold start. These runs use
+640×480 VGA output; they do not cover the TAM's native LCD mode, every other
+built-in display mode, IDE boot, X, audio playback or floppy I/O. As on the
+6400, there is currently no emulated Ethernet controller for these models.
 
 ## 1. Create the disks
 
