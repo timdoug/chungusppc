@@ -116,6 +116,9 @@ void ScsiBusController::sequencer() {
             this->cur_state = SeqState::RCV_DATA;
             this->rcv_data();
         }
+        // DBDMA may already be waiting for the SCSI data phase to begin.
+        if (this->is_dma_cmd && this->channel_obj && this->channel_obj->dma_is_ready())
+            this->channel_obj->xfer_retry();
         break;
     case SeqState::XFER_END:
         if (this->is_initiator)
@@ -233,30 +236,49 @@ int ScsiBusController::send_data(uint8_t* dst_ptr, int count) {
 }
 
 int ScsiBusController::xfer_from(DmaChannel *ch_obj, uint8_t *buf, int len) {
-    if (len > this->to_xfer + this->fifo_pos)
-        LOG_F(WARNING, "%s: DMA xfer len > command xfer len", this->name.c_str());
+    if (!this->is_dma_cmd || this->cur_state != SeqState::RCV_DATA || len <= 0)
+        return 0;
 
+    int transferred = 0;
     if (this->fifo_pos) {
         int fifo_bytes = std::min(this->fifo_pos, len);
         std::memcpy(buf, this->data_fifo, fifo_bytes);
         this->fifo_pos -= fifo_bytes;
+        if (this->fifo_pos)
+            std::memmove(this->data_fifo, this->data_fifo + fifo_bytes, this->fifo_pos);
         len -= fifo_bytes;
         buf += fifo_bytes;
+        transferred += fifo_bytes;
     }
 
     int dma_bytes = std::min(this->to_xfer, len);
-
-    if (this->bus_obj->pull_data(this->dst_id, buf, dma_bytes)) {
+    if (dma_bytes > 0 && this->bus_obj->pull_data(this->dst_id, buf, dma_bytes)) {
         this->to_xfer -= dma_bytes;
-        if (this->to_xfer <= 0) {
-            this->xfer_count = this->to_xfer;
-            this->cur_state = SeqState::XFER_END;
-            this->sequencer();
-        }
-        return 0;
+        transferred += dma_bytes;
     }
+    this->xfer_count = this->to_xfer;
+    if (!this->to_xfer && !this->fifo_pos) {
+        this->cur_state = SeqState::XFER_END;
+        this->sequencer();
+    }
+    return transferred;
+}
 
-    return len;
+int ScsiBusController::xfer_to(DmaChannel *ch_obj, uint8_t *buf, int len) {
+    if (!this->is_dma_cmd || this->cur_state != SeqState::SEND_DATA || len <= 0)
+        return 0;
+
+    int transferred = std::min(this->to_xfer, len);
+    if (transferred <= 0 || !this->bus_obj->push_data(this->dst_id, buf, transferred))
+        return 0;
+
+    this->to_xfer -= transferred;
+    this->xfer_count = this->to_xfer;
+    if (!this->to_xfer) {
+        this->cur_state = SeqState::XFER_END;
+        this->sequencer();
+    }
+    return transferred;
 }
 
 void ScsiBusController::update_irq() {
@@ -270,9 +292,10 @@ void ScsiBusController::update_irq() {
 void ScsiBusController::fifo_push(const uint8_t data) {
     if (this->fifo_pos < DATA_FIFO_DEPTH) {
         this->data_fifo[this->fifo_pos++] = data;
-        if (!this->xfer_count)
-            LOG_F(WARNING, "%s: zero xfer_count!", this->name.c_str());
-        if (--this->xfer_count == 0)
+        // The 16-bit count encodes 64 KiB as zero. Drain a full FIFO now:
+        // PIO drivers wait for space before issuing their next write.
+        this->xfer_count = (this->xfer_count - 1) & 0xFFFF;
+        if (!this->xfer_count || this->fifo_pos == DATA_FIFO_DEPTH)
             this->sequencer();
     } else
         this->sequencer();

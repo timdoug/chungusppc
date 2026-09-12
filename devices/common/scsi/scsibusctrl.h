@@ -82,6 +82,7 @@ public:
 
     // DmaDevice methods
     int xfer_from(DmaChannel *ch_obj, uint8_t *buf, int len) override;
+    int xfer_to(DmaChannel *ch_obj, uint8_t *buf, int len) override;
 
 protected:
     void seq_defer_state(uint64_t delay_ns);
