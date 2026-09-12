@@ -231,6 +231,16 @@ hard-disk writes on that bus remain untested. NuBus cards, floppy I/O and audio
 playback are outside this pass. The 6100 was rechecked for boot and Ethernet
 after these emulator changes.
 
+The 6100's built-in video also passed Xpmac/GNOME at 640×480 in 256 colors,
+started with `startx` from the console. Checks covered keyboard input, colored
+terminal text and scrolling, overlapping windows, dragging and repainting,
+`chvt` between console VT 1 and X on VT 7, and exiting X back to a working color
+console. Colors were restored correctly when switching consoles. The guest
+then halted; the emulator was closed afterward. No additional emulator or
+guest changes were needed.
+An extra xterm reported colormap-allocation warnings at this eight-bit depth.
+X remains untested on the 7100/8100 and with expansion graphics cards.
+
 ## Power Mac 5400 and Performa / Power Mac 6400
 
 `pm5400` and `pm6400` boot the same rebuilt Mach kernel and Linux 2.0.40 server,
@@ -261,8 +271,15 @@ Both models passed 4 MiB checksum comparisons for SCSI filesystem writes,
 raw IDE writes and reads, and MESH CD reads, plus a guest-initiated reboot.
 The 5400 retained its test data after reboot; the 6400 also passed persistence
 across a clean shutdown and cold start. Both shut down cleanly.
-Mac OS's booter and MkLinux's 16-bit console display in color. Booting from IDE,
-X, audio playback and floppy I/O remain untested.
+Mac OS's booter and MkLinux's 16-bit console display in color.
+
+The 6400 also passed Xpmac/GNOME at 640×480 with 16-bit pixels, started with
+`startx` from the console. Checks covered keyboard input, colored terminal text
+and scrolling, overlapping windows, dragging and repainting, `chvt` between
+console VT 1 and X on VT 7, and exiting X back to a working color console.
+The guest shut down cleanly. No additional emulator or guest changes were
+needed. X remains untested on the 5400. Booting from IDE, audio playback and
+floppy I/O remain untested; the 6400 desktop run logged audio DMA errors.
 
 The [6400 specifications](https://support.apple.com/en-ca/112092) list two PCI
 slots and a Comm Slot II, with no built-in Ethernet. Period upgrades included
