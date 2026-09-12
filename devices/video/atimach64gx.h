@@ -77,6 +77,13 @@ protected:
 private:
     void change_one_bar(uint32_t &aperture, uint32_t aperture_size, uint32_t aperture_new, int bar_num);
     void update_interrupt();
+    void begin_drawing(uint32_t initiator, uint32_t value);
+    void draw_rect(uint32_t width, uint32_t height);
+    void finish_rect(uint32_t width, uint32_t height);
+    void write_host_data(uint32_t value, uint32_t size);
+    bool host_active = false;
+    bool host_mono = true;
+    uint32_t host_width = 0, host_height = 0, host_col = 0, host_row = 0;
 
     uint32_t    regs[256] = {}; // internal registers
     bool        pci_irq_line_state = false;
