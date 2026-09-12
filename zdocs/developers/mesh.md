@@ -4,13 +4,27 @@ interrupt semantics are specified in chapter 12 of the
 
 The ROM-independent regression test exercises interrupt masking, command
 completion, exception acknowledgement, and repeated selection timeouts on an
-empty bus:
+empty bus. A memory-backed target also checks DBDMA reads and writes at 16 bytes,
+512 bytes and 64 KiB, split descriptors that partially drain the FIFO, and
+starting DMA before or after the MESH data command. PIO writes cover full FIFO
+bursts, a partial final burst, and the zero-encoded 64 KiB transfer count:
 
 ```
 cmake -S . -B build -DDPPC_BUILD_DEVICE_TESTS=ON
 cmake --build build --target testmesh
 ctest --test-dir build -R '^mesh$' --output-on-failure
 ```
+
+The DMA callbacks return the number of bytes actually transferred. Returning
+zero after a read stalls DBDMA; inheriting the default write callback consumes
+the DMA buffer without delivering anything to the SCSI target. Mac OS startup
+on the 6400 exercises these writes before MkLinux loads. When the data command
+arrives after DBDMA has started, MESH must retry the waiting channel.
+
+The Gazelle ROM also writes through the FIFO using PIO. A full FIFO must drain
+without requiring another write: the driver polls FIFOCount for space first.
+Deferring the transfer until a seventeenth byte arrives deadlocks that poll
+and would discard the extra byte.
 
 # Registers
 
