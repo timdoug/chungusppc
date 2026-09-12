@@ -454,7 +454,7 @@ template void VideoCtrlBase::convert_frame_32bpp<VideoCtrlBase::BE>(uint8_t *dst
 template void VideoCtrlBase::convert_frame_32bpp<VideoCtrlBase::LE>(uint8_t *dst_buf, int dst_pitch, bool swapper);
 
 template <int depth>
-void VideoCtrlBase::convert_frame_directcolor(uint8_t *dst_buf, int dst_pitch) {
+void VideoCtrlBase::convert_frame_directcolor(uint8_t *dst_buf, int dst_pitch, int index_shift) {
     static_assert(depth == 16 || depth == 32);
     constexpr int component_bits = depth == 16 ? 5 : 8;
     constexpr uint32_t component_mask = (1U << component_bits) - 1;
@@ -464,9 +464,10 @@ void VideoCtrlBase::convert_frame_directcolor(uint8_t *dst_buf, int dst_pitch) {
     constexpr bool little_endian = false;
 #endif
 
-    // Apple DACula and RaDACal use each RGB field as a CLUT index, including
-    // in RGB555 and xRGB8888 modes. Mac OS programs gamma ramps; MkLinux
-    // puts console palette indices in all three fields instead.
+    // Apple DACula, RaDACal and Valkyrie use each RGB field as a CLUT index,
+    // including in RGB555 and xRGB8888 modes. Integrated Mach64 DACs shift
+    // RGB555 indices left by three. Mac OS programs gamma ramps; MkLinux puts
+    // console palette indices in all three fields instead.
     for (int y = 0; y < this->active_height; y++) {
         const uint8_t *src = this->fb_ptr + y * this->fb_pitch;
         uint8_t *dst = dst_buf + y * dst_pitch;
@@ -477,9 +478,9 @@ void VideoCtrlBase::convert_frame_directcolor(uint8_t *dst_buf, int dst_pitch) {
             } else {
                 c = little_endian ? READ_DWORD_LE_A(src) : READ_DWORD_BE_A(src);
             }
-            uint32_t r = this->palette[(c >> (2 * component_bits)) & component_mask];
-            uint32_t g = this->palette[(c >> component_bits) & component_mask];
-            uint32_t b = this->palette[c & component_mask];
+            uint32_t r = this->palette[((c >> (2 * component_bits)) & component_mask) << index_shift];
+            uint32_t g = this->palette[((c >> component_bits) & component_mask) << index_shift];
+            uint32_t b = this->palette[(c & component_mask) << index_shift];
             FB_WRITE(dst, 0xFF000000 | (r & 0x00FF0000) |
                          (g & 0x0000FF00) | (b & 0x000000FF));
             src += depth / 8;
@@ -488,5 +489,5 @@ void VideoCtrlBase::convert_frame_directcolor(uint8_t *dst_buf, int dst_pitch) {
     }
 }
 
-template void VideoCtrlBase::convert_frame_directcolor<16>(uint8_t *dst_buf, int dst_pitch);
-template void VideoCtrlBase::convert_frame_directcolor<32>(uint8_t *dst_buf, int dst_pitch);
+template void VideoCtrlBase::convert_frame_directcolor<16>(uint8_t *dst_buf, int dst_pitch, int index_shift);
+template void VideoCtrlBase::convert_frame_directcolor<32>(uint8_t *dst_buf, int dst_pitch, int index_shift);

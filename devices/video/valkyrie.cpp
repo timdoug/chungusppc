@@ -269,7 +269,7 @@ void ValkyrieVideo::enable_video_internal() {
         break;
     case 16:
         this->convert_fb_cb = [this](uint8_t* dst_buf, int dst_pitch) {
-            this->convert_frame_15bpp<BE>(dst_buf, dst_pitch);
+            this->convert_frame_directcolor<16>(dst_buf, dst_pitch);
         };
         this->fb_pitch = this->active_width << 1; // 1 pixel is 2 bytes
         break;

@@ -75,7 +75,7 @@ public:
     template <VideoCtrlBase::fb_endian endian>
     void convert_frame_16bpp(uint8_t *dst_buf, int dst_pitch, bool swapper = false);
     template <int depth>
-    void convert_frame_directcolor(uint8_t *dst_buf, int dst_pitch);
+    void convert_frame_directcolor(uint8_t *dst_buf, int dst_pitch, int index_shift = 0);
     void convert_frame_24bpp(uint8_t *dst_buf, int dst_pitch);
     template <VideoCtrlBase::fb_endian endian>
     void convert_frame_32bpp(uint8_t *dst_buf, int dst_pitch, bool swapper = false);
