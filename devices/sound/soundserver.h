@@ -47,7 +47,8 @@ public:
 
     int start();
     void shutdown();
-    int open_out_stream(uint32_t sample_rate, DmaOutChannel *dma_ch);
+    int open_out_stream(uint32_t sample_rate, DmaOutChannel *dma_ch, bool byte_swap = false);
+    void set_out_byte_swap(bool enabled);
     int start_out_stream();
     void close_out_stream();
 

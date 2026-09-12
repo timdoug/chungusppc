@@ -69,7 +69,8 @@ void AwacsBase::dma_out_start() {
     }
 
     if (!this->out_stream_ready) {
-        if ((err = this->snd_server->open_out_stream(this->cur_sample_rate, this->dma_out_ch))) {
+        if ((err = this->snd_server->open_out_stream(this->cur_sample_rate, this->dma_out_ch,
+                                                   this->out_byte_swap))) {
             LOG_F(ERROR, "%s: unable to open sound output stream: %d",
                   this->name.c_str(), err);
             return;
@@ -83,6 +84,8 @@ void AwacsBase::dma_out_start() {
         if ((err = snd_server->start_out_stream())) {
             LOG_F(ERROR, "%s: could not start sound output stream: %d",
                   this->name.c_str(), err);
+        } else {
+            this->out_stream_running = true;
         }
     }
 }
@@ -96,7 +99,8 @@ void AwacsBase::dma_out_stop() {
 }
 
 void AwacsBase::dma_out_pause() {
-    this->out_stream_running = false;
+    // AMIC pauses DMA without closing the host stream. The callback supplies
+    // silence until DMA resumes; starting the same cubeb stream again is unnecessary.
 }
 
 static const char sound_input_data[2048] = {0};
@@ -203,7 +207,7 @@ uint32_t AwacsScreamer::snd_ctrl_read(uint32_t offset, int size) {
         this->clip_count = 0;
         break;
     case AWAC_BYTE_SWAP:
-        value = this->byte_swap ? 0 : 1;
+        value = BYTESWAP_32(this->byte_swap);
         break;
     case AWAC_FRAME_COUNT:
         value = this->frame_count;
@@ -248,7 +252,10 @@ void AwacsScreamer::snd_ctrl_write(uint32_t offset, uint32_t value, int size) {
         this->clip_count = BYTESWAP_32(value);
         break;
     case AWAC_BYTE_SWAP:
-        this->byte_swap = BYTESWAP_32(value);
+        this->byte_swap = BYTESWAP_32(value) & 1;
+        this->out_byte_swap = this->byte_swap != 0;
+        if (this->snd_server)
+            this->snd_server->set_out_byte_swap(this->out_byte_swap);
         break;
     case AWAC_FRAME_COUNT:
         this->frame_count = BYTESWAP_32(value);

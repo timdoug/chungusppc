@@ -30,6 +30,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <debugger/debugger.h>
 #include <devices/common/ofnvram.h>
 #include <devices/video/display.h>
+#include <devices/sound/soundserver.h>
 #include <machines/machinebase.h>
 #include <machines/machinefactory.h>
 #include <utils/profiler.h>
@@ -465,6 +466,10 @@ void run_machine(std::string machine_str, char* rom_data,
     if (is_deterministic && !deterministic_interactive) {
         TimerManager::get_instance()->cancel_timer(deterministic_timer);
     }
+    // Stop host callbacks before canceling timers or freeing their DMA channels.
+    if (auto sound = dynamic_cast<SoundServer*>(
+            gMachineObj->get_comp_by_name_optional("SoundServer")))
+        sound->shutdown();
     TimerManager::get_instance()->cancel_all_timers();
     EventManager::get_instance()->disconnect_handlers();
     delete gMachineObj.release();

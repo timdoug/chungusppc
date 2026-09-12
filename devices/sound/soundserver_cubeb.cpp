@@ -28,6 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <cpu/ppc/ppcemu.h>
 #include <devices/common/dmacore.h>
 #include <devices/sound/soundserver.h>
+#include <devices/sound/soundbuffer.h>
 
 #include <algorithm>
 #include <functional>
@@ -48,8 +49,9 @@ typedef enum {
 class SoundServer::Impl {
 public:
     Status status = SND_SERVER_DOWN;
-    cubeb *cubeb_ctx;
-    cubeb_stream *out_stream;
+    cubeb *cubeb_ctx = nullptr;
+    cubeb_stream *out_stream = nullptr;
+    std::unique_ptr<DmaSoundOutput> output;
 
     uint32_t deterministic_poll_timer = 0;
     timer_cb deterministic_poll_cb;
@@ -119,45 +121,9 @@ static long sound_out_callback(cubeb_stream* stream, void* user_data,
                         void const *input_buffer, void *output_buffer,
                         long req_frames)
 {
-    uint8_t *p_in;
-    int16_t* in_buf, * out_buf;
-    uint32_t got_len;
-    long frames, out_frames;
-    DmaOutChannel *dma_ch = static_cast<DmaOutChannel*>(user_data); /* C API baby! */
-
-    if (!dma_ch->is_out_active()) {
-        return 0;
-    }
-
-    out_buf = (int16_t*)output_buffer;
-
-    out_frames = 0;
-
-    while (req_frames > 0) {
-        if (DmaPullResult::MoreData == dma_ch->pull_data((uint32_t)req_frames << 2, &got_len, &p_in)) {
-            if ((in_buf = (int16_t*)p_in)) {
-                frames = got_len >> 2;
-
-                for (int i = (int)frames; i > 0; i--) {
-                    out_buf[0] = READ_WORD_BE_A(&in_buf[0]);
-                    out_buf[1] = READ_WORD_BE_A(&in_buf[1]);
-                    in_buf += 2;
-                    out_buf += 2;
-                }
-
-                req_frames -= frames;
-                out_frames += frames;
-            }
-            else {
-                LOG_F(ERROR, "Didn't get qdata");
-            }
-        }
-        else {
-            break;
-        }
-    }
-
-    return out_frames;
+    auto output = static_cast<DmaSoundOutput*>(user_data);
+    output->render(static_cast<int16_t*>(output_buffer), req_frames);
+    return req_frames;
 }
 
 static void status_callback(cubeb_stream *stream, void *user_data, cubeb_state state)
@@ -165,8 +131,10 @@ static void status_callback(cubeb_stream *stream, void *user_data, cubeb_state s
     LOG_F(9, "Cubeb status callback fired, status = %d", state);
 }
 
-int SoundServer::open_out_stream(uint32_t sample_rate, DmaOutChannel *dma_ch)
+int SoundServer::open_out_stream(uint32_t sample_rate, DmaOutChannel *dma_ch, bool byte_swap)
 {
+    impl->output = std::make_unique<DmaSoundOutput>(dma_ch);
+    impl->output->set_byte_swap(byte_swap);
     // Set up a cyclic-timer DMA drain callback. It keeps the guest sound DMA
     // advancing even if the host audio stream cannot be started, otherwise
     // the guest sound driver would stall forever waiting for DMA interrupts.
@@ -201,6 +169,8 @@ int SoundServer::open_out_stream(uint32_t sample_rate, DmaOutChannel *dma_ch)
         .prefs    = CUBEB_STREAM_PREF_NONE
     };
 
+    if (!impl->cubeb_ctx)
+        return -1;
     res = cubeb_get_min_latency(impl->cubeb_ctx, &params, &latency_frames);
     if (res != CUBEB_OK) {
         LOG_F(ERROR, "Could not get minimum latency, error: %d", res);
@@ -211,7 +181,7 @@ int SoundServer::open_out_stream(uint32_t sample_rate, DmaOutChannel *dma_ch)
 
     res = cubeb_stream_init(impl->cubeb_ctx, &impl->out_stream, "SndOut stream",
                             NULL, NULL, NULL, &params, latency_frames,
-                            sound_out_callback, status_callback, dma_ch);
+                            sound_out_callback, status_callback, impl->output.get());
     if (res != CUBEB_OK) {
         LOG_F(ERROR, "Could not open sound output stream, error: %d", res);
         return -1;
@@ -222,6 +192,12 @@ int SoundServer::open_out_stream(uint32_t sample_rate, DmaOutChannel *dma_ch)
     impl->status = SND_STREAM_OPENED;
 
     return 0;
+}
+
+void SoundServer::set_out_byte_swap(bool enabled)
+{
+    if (impl->output)
+        impl->output->set_byte_swap(enabled);
 }
 
 int SoundServer::start_out_stream()
