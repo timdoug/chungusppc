@@ -49,7 +49,7 @@ static FlopImgType identify_image(ImgFile& img_file)
     } else {
         auto check_hfs_mfs = [](ImgFile& img, std::size_t offset) -> bool {
             /* 2 bytes needed for MFS/HFS signature */
-            unsigned char buf[2];
+            unsigned char buf[2] = {};
 
             // rewind to logical block 2
             img.read((char *)buf, 2*BLOCK_SIZE + offset, sizeof(buf));
@@ -67,6 +67,16 @@ static FlopImgType identify_image(ImgFile& img_file)
     }
 
     return FlopImgType::UNKNOWN;
+}
+
+bool is_floppy_image(const std::string& path)
+{
+    ImgFile file;
+    if (!file.open(path)) return false;
+    auto size = file.size();
+    return size == 400 * 1024 || size == 800 * 1024 ||
+           size == 720 * 1024 || size == 1440 * 1024 ||
+           (size < 2 * 1024 * 1024 && identify_image(file) == FlopImgType::DC42);
 }
 
 //======================= RAW IMAGE CONVERTER ============================
@@ -192,6 +202,16 @@ int RawFloppyImg::get_raw_disk_data(char* buf)
 int RawFloppyImg::export_data()
 {
     return 0;
+}
+
+bool RawFloppyImg::write_sector(int sector, const char* data)
+{
+    if (sector < 0 || sector >= data_size / BLOCK_SIZE)
+        return false;
+    ImgFile image;
+    if (!image.open(img_path) || image.size() != data_size)
+        return false;
+    return image.write(data, uint64_t(sector) * BLOCK_SIZE, BLOCK_SIZE) == BLOCK_SIZE;
 }
 
 // ====================== DISK COPY 4.2 IMAGE CONVERTER ======================
