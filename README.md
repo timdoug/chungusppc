@@ -30,8 +30,9 @@ also works with either of the two Mach64 GX card ROMs we tried.
 
 The model checks above cover the console; X hasn't been checked across the
 full list. Sound and floppies haven't been tested. Alchemy/Gazelle have no
-emulated Ethernet, and ATI Rage drawing is incomplete. Some models share the
-same emulated hardware, and some need a particular display mode. See the
+emulated Ethernet. ATI Rage text and window drawing work on the 6500/5500/TAM; some
+accelerator operations are still missing. Some models share the same emulated
+hardware, and some need a particular display mode. See the
 [model notes](zdocs/users/mklinux.md).
 
 The [build notes](mklinux-selfhost/README.md) have the patches, source checksums
