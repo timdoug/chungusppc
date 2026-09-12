@@ -1,4 +1,4 @@
-The following document is intended primarily as a documentation on how the IBM Personal Power series (and similar computers) operates. It is currently not implemented in DingusPPC.
+The following document is intended primarily as a documentation on how the IBM Personal Power series (and similar computers) operates. It is currently not implemented in ChungusPPC.
 
 ## Sources
 

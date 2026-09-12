@@ -42,7 +42,7 @@ def prepare(target, check_only):
             kwargs = {'filter': 'data'} if hasattr(tarfile, 'data_filter') else {}
             source.extractall(temporary, members=members, **kwargs)
         tree = temporary / ('osfmk' if target == 'mach' else 'linux-2.0.40')
-        # Do not let git apply inherit the enclosing DingusPPC repository;
+        # Do not let git apply inherit the enclosing ChungusPPC repository;
         # it would silently skip Git-format patch paths outside its subdirectory.
         environment = dict(os.environ, GIT_CEILING_DIRECTORIES=str(temporary))
         subprocess.run(['git', 'apply', '--no-index', '--whitespace=nowarn',

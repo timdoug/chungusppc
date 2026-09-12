@@ -765,12 +765,12 @@ void DppcDebugger::enter_debugger() {
             }
             if (!did_message) {
                 cout << endl;
-                cout << "Welcome to the DingusPPC command line debugger." << endl;
+                cout << "Welcome to the ChungusPPC command line debugger." << endl;
                 cout << "Please enter a command or 'help'." << endl << endl;
                 did_message = true;
             }
 
-            printf("%08X: dingusdbg> ", ppc_state.pc);
+            printf("%08X: chungusdbg> ", ppc_state.pc);
 
             while (power_on) {
                 /* reset string stream */
