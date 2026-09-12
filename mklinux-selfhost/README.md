@@ -102,7 +102,7 @@ md5sum -c ../source-md5sums.txt
 ( setsid nice -n 15 bash ../build-server.sh > /tmp/build-server-2.0.40.log 2>&1 < /dev/null & )
 ```
 
-The build uses the retained `server.config`, including ISO9660/NLS and PPP
+The build uses the retained `server.config`, including ISO9660/NLS, AWACS sound and PPP
 modules. Look for `BUILD_FINISHED` and `BUILD_EXIT=0` before installing:
 
 ```sh
