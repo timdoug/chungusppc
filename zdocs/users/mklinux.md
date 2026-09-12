@@ -36,7 +36,7 @@ default 604 CPU, the `9630C68B` TNT ROM, universal Mac OS 7.6.1 installation
 and R2 booter. Use separate copies of the working disks:
 
 ```
-dingusppc -r -m pm8500 -b "9630C68B - Power Mac 7200&7500&8500&9500 v2.ROM" \
+chungusppc -r -m pm8500 -b "9630C68B - Power Mac 7200&7500&8500&9500 v2.ROM" \
     --rambank1_size 128 --mon_id=VGA-SVGA \
     --hdd_img "universal-macos.img:mklinux.img" \
     --cdr_img "MkLinux R2 RC5.toast" --cdr_img2 "MkLinux R2 RC5.toast" \
@@ -70,7 +70,7 @@ versions and file CRC32 values distinguish them:
 Apple's [enhanced 8600/9600 developer note](https://manualzz.com/doc/1294509/apple-power-macintosh-8600-250--8600-300--9600-300--9600-...)
 describes the later ROM's support for the Mach 5 processor card, its inline
 cache and Brick controller, and higher clock frequencies and multipliers.
-Those models shipped with System 7.6.1. DingusPPC currently selects an ordinary
+Those models shipped with System 7.6.1. ChungusPPC currently selects an ordinary
 604e for these TNT models; loading v2 does not add a Mach 5 processor or model
 its inline-cache hardware.
 
@@ -115,7 +115,7 @@ icons, depth changes and window movement/repainting. See the
 For MkLinux, use 832×624 in 256 colors with the fixed-frequency 16-inch monitor:
 
 ```
-dingusppc -r -m pm9500 -b "9630C68B - Power Mac 7200&7500&8500&9500 v2.ROM" \
+chungusppc -r -m pm9500 -b "9630C68B - Power Mac 7200&7500&8500&9500 v2.ROM" \
     --rambank1_size 128 --mon_id=MacRGB16in --pci_A1=AtiMach64Gx \
     --hdd_img "universal-macos.img:mklinux.img" \
     --cdr_img "MkLinux R2 RC5.toast" --cdr_img2 "MkLinux R2 RC5.toast" \
@@ -163,7 +163,7 @@ checksum `9FEB69B3` (file CRC32 `a43fadbc`). The newer install disc used here is
 `MkLinux R2 RC5.toast`.
 
 ```
-dingusppc -r -m pm6100 -b "9FEB69B3 - Power Mac 6100 & 7100 & 8100.ROM" \
+chungusppc -r -m pm6100 -b "9FEB69B3 - Power Mac 6100 & 7100 & 8100.ROM" \
     --rambank1_size 64 --rambank2_size 64 --mon_id=VGA-SVGA \
     --hdd_img "universal-macos.img:mklinux.img" \
     --cdr_img "MkLinux R2 RC5.toast" \
@@ -220,7 +220,7 @@ using the universal Mac OS 7.6.1 installation and R2 booter above. Use copies of
 working disks and the `6F5724C0` Performa 6400 ROM:
 
 ```
-dingusppc -r -m pm6400 -b "6F5724C0 - Performa 6400.ROM" \
+chungusppc -r -m pm6400 -b "6F5724C0 - Performa 6400.ROM" \
     --rambank1_size 32 --rambank2_size 32 \
     --rambank3_size 32 --rambank4_size 32 --mon_id=VGA-SVGA \
     --hdd_img2 "universal-macos.img:mklinux.img" \
@@ -250,7 +250,7 @@ The [6400 specifications](https://support.apple.com/en-ca/112092) list two PCI
 slots and a Comm Slot II, with no built-in Ethernet. Period upgrades included
 Farallon PCI and Comm Slot II 10/100 cards
 ([Farallon's announcement](https://www.mactech.com/1998/09/28/npl-farallon-ships-10-100-for-comm-slot-ii/)).
-DingusPPC currently emulates neither kind of Ethernet expansion card, so
+ChungusPPC currently emulates neither kind of Ethernet expansion card, so
 `--enet_backend=slirp` alone cannot provide networking on this model. Mach's
 DEC Tulip driver makes a compatible PCI card a candidate for future emulation;
 the card and Alchemy's PCI slot interrupt routing still need implementation.
@@ -264,7 +264,7 @@ installation, R2 booter and rebuilt Mach/Linux binaries. Use separate copies
 of the disks for each model:
 
 ```
-dingusppc -r -m pm6500 -b "6E92FE08 - Power Mac 6500.ROM" \
+chungusppc -r -m pm6500 -b "6E92FE08 - Power Mac 6500.ROM" \
     --rambank1_size 64 --rambank2_size 64 --mon_id=VGA-SVGA \
     --hdd_img2 "universal-macos.img:mklinux.img" \
     --cdr_img2 "MkLinux R2 RC5.toast"
@@ -310,13 +310,13 @@ no editing is needed to install.
 ## 2. Install Mac OS
 
 ```
-dingusppc -r -b bootrom.bin -m pm7200 --rambank1_size 128 \
+chungusppc -r -b bootrom.bin -m pm7200 --rambank1_size 128 \
     --hdd_img "macos.img:mklinux.img" \
     --cdr_img "MacOS761.iso:MkLinux-DR3.iso"
 ```
 
 Initialize `macos.img` before installing. Apple's **Drive Setup** will refuse it:
-DingusPPC's disks report as `QUANTUM / Emulated Disk`, and Drive Setup only
+ChungusPPC's disks report as `QUANTUM / Emulated Disk`, and Drive Setup only
 touches Apple-branded drives. Use **Apple HD SC Setup 7.3.5** from the DR3 CD's
 `MacOS Utilities` folder instead, which partitions any SCSI drive.
 

@@ -76,7 +76,7 @@ int SoundServer::start()
 
     impl->status = SND_SERVER_DOWN;
 
-    res = cubeb_init(&impl->cubeb_ctx, "Dingus sound server", NULL);
+    res = cubeb_init(&impl->cubeb_ctx, "ChungusPPC sound server", NULL);
     if (res != CUBEB_OK) {
         LOG_F(ERROR, "Could not initialize Cubeb library");
         return -1;

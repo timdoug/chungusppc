@@ -85,5 +85,5 @@ sync
 shutdown -h now
 ```
 
-Restart DingusPPC after the guest finishes shutting down. The installed
+Restart ChungusPPC after the guest finishes shutting down. The installed
 2.0.38 module directory remains available for the previous server.

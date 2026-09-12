@@ -8,14 +8,13 @@ General
 AI Usage
 =======
 
-* Do not use artificial intelligence to make contributions. This is due to authorship issues and licensing issues regarding AI usage.
-* Do not use artificial intelligence to write up issues or pull requests.
+* AI-assisted and AI-generated contributions are welcome in ChungusPPC and follow the same review and testing requirements as other contributions.
 
 Code
 =======
 
 * Make sure the code can compile for all target systems - Windows, Linux, and macOS/Mac OS X.
-* All code must be compatible with at least C++11.
+* All code must be compatible with C++20.
 * Minimize the amount of redundant code.
 * Avoid using absolute paths for the headers.
 * Code should maintain vertical alignment for better readability, for example:

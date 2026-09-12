@@ -324,7 +324,7 @@ int main() {
     int new_msr = (MSR::ME | MSR::IP | MSR::FP);
     ppc_msr_did_change(ppc_state.msr, new_msr, false);
 
-    cout << "Running DingusPPC emulator tests..." << endl << endl;
+    cout << "Running ChungusPPC emulator tests..." << endl << endl;
 
     ntested = 0;
     nfailed = 0;

@@ -111,13 +111,13 @@ else:
 Guest operating systems can change BAT registers and page address translation
 state very frequently. XNU, for example, temporarily installs a DBAT mapping in
 some physical-memory access routines and restores the previous mapping shortly
-afterwards. DingusPPC applies the resulting TLB invalidation at the next context
+afterwards. ChungusPPC applies the resulting TLB invalidation at the next context
 synchronization (`isync`, `rfi`, or `sc`), as the processor does. A BAT update
 must invalidate cached PAT translations as well as BAT translations because a
 new BAT can shadow a page mapping.
 
 Scanning every primary and secondary TLB array at each synchronization is
-expensive. Instead, DingusPPC records pointers to slots populated by BAT or PAT
+expensive. Instead, ChungusPPC records pointers to slots populated by BAT or PAT
 translation in separate instruction and data vectors. Pending invalidations are
 combined by translation source, and synchronization visits only those tracked
 slots. Writes that leave a BAT register unchanged are ignored before scheduling

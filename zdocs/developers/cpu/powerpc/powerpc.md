@@ -1,4 +1,4 @@
-The PowerPC is the main processor used for Power Macs. Currently, DingusPPC only implements the 32-bit variant.
+The PowerPC is the main processor used for Power Macs. Currently, ChungusPPC only implements the 32-bit variant.
 
 # General Notes
 
