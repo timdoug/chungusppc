@@ -29,6 +29,15 @@ names below become `/dev/scsi1.0` and `/dev/scsi1.1`. The Linux disk remains
 `sdb`, and the installed root device remains `/dev/sdb2`. Leave `--hdd_img2`
 and `--cdr_img2` empty for this configuration.
 
+The 7500's Control video also passed Xpmac/GNOME at 640×480 with 32-bit pixels,
+using `--mon_id=VGA-SVGA --gfxmem_size=4`. Run `startx` from the guest console;
+the installed Xpmac uses the mode inherited from Mac OS. Checks covered keyboard
+input, colored terminal text and scrolling, overlapping windows, dragging and
+repainting, switching between console VT 1 and X on VT 7 with `chvt`, and
+exiting X back to a usable color console. The guest then shut down cleanly.
+No additional emulator, Mach or Linux changes were needed. This desktop check
+does not establish X coverage on the other models with Control video.
+
 ## Power Mac 8500
 
 `pm8500` boots the same rebuilt Mach kernel and Linux 2.0.40 server with its
@@ -133,6 +142,15 @@ offset, so clearing the end of the framebuffer crosses the mapping and faults.
 is a video-mode workaround for the retained guest binaries, separate from the
 GX emulator fixes; other MkLinux resolutions and direct-color modes remain
 unvalidated.
+
+Xpmac/GNOME also passed on the 9500 with the `-104` GX card ROM at 832×624 in
+256 colors. Run `startx` from the console. Keyboard input, colored terminal
+text and scrolling, overlapping windows, dragging and repainting, switching
+between console VT 1 and X on VT 7 with `chvt`, and exiting X back to the color
+console all worked, followed by clean shutdown. No additional emulator or guest
+changes were needed. The eight-bit desktop can exhaust its colormap: an extra
+xterm reported color-allocation warnings. X remains untested on the 9600 and
+with the `-101` card ROM.
 
 The 9500 with its default 604 CPU and the `-104` card ROM passed a color login,
 4 MiB filesystem and both SCSI CD checksum checks, DHCP, DNS, gateway ping,
