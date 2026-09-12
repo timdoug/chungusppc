@@ -35,8 +35,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using namespace ata_interface;
 
-static char cdrom_vendor_id[] = "DINGUS  ";
-static char cdrom_product_id[]  = "DINGUS CD-ROM   ";
+static char cdrom_vendor_id[] = "CHUNGUS ";
+static char cdrom_product_id[]  = "CHUNGUS CD-ROM  ";
 static char cdrom_revision_id[] = "1.0 ";
 
 AtapiCdrom::AtapiCdrom(std::string name) : AtapiBaseDevice(name) {

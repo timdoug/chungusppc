@@ -37,7 +37,7 @@ The NCR 53C94 is the SCSI controller.
 
 Mac OS relies on 8 KB of NVRAM at minimum to run properly. It's usually found at IOBase (ex.: 0xF3000000 for Power Mac G3 Beige) + 0x60000.
 
-On a physical machine, one has to hold the Command/Apple, Option, P and R keys together. However, using DingusPPC, one can simply delete the nvram.bin file instead.
+On a physical machine, one has to hold the Command/Apple, Option, P and R keys together. However, using ChungusPPC, one can simply delete the nvram.bin file instead.
 
 # PMU
 
