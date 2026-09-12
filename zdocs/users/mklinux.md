@@ -228,8 +228,8 @@ persistence across shutdown/startup or reboot, CD reads, and clean shutdown.
 Both also completed a guest-initiated reboot with Samba and AppleTalk enabled.
 The 8100's second SCSI bus passed a separate 4 MiB CD checksum comparison;
 hard-disk writes on that bus remain untested. NuBus cards, floppy I/O and audio
-playback are outside this pass. The 6100 was rechecked for boot and Ethernet
-after these emulator changes.
+playback are outside this 7100/8100 pass. The 6100 was rechecked for boot and
+Ethernet; its [audio](#audio) and [floppy](#floppy-io) checks are described below.
 
 The 6100's built-in video also passed Xpmac/GNOME at 640×480 in 256 colors,
 started with `startx` from the console. Checks covered keyboard input, colored
@@ -330,7 +330,8 @@ The 6500, 5500 and TAM passed login, 4 MiB SCSI filesystem and raw IDE checksum
 comparisons, CD reads, persistence after a guest reboot, and clean shutdown.
 The 6500 also retained its test data across a cold start. These runs use
 640×480 VGA output; they do not cover the TAM's native LCD mode, every other
-built-in display mode, audio playback or floppy I/O. X/GNOME was
+built-in display mode, or audio/floppy I/O on the 5500 and TAM. The 6500's
+[audio](#audio) and [floppy](#floppy-io) tests are described below. X/GNOME was
 also checked on the 6500 at 640×480 in Thousands, including terminal output
 and scrolling; X remains untested on the 5500 and TAM. As on the 6400, there
 is currently no emulated Ethernet controller for these models.
@@ -527,6 +528,37 @@ The 6500 also completed guest shutdown and host audio cleanup without a crash.
 Recording, other sample formats, mixer volume and input selection are not
 verified. The existing input backend supplies synthetic data; it does not
 capture a host microphone.
+
+## Floppy I/O
+
+Raw 720 KiB and 1.44 MiB MFM floppy images support sector writes. SWIM3 decodes
+the write preamble, data and CRC commands; AMIC now supports floppy DMA in
+both directions and reports completion interrupts. Disk Copy 4.2 and GCR
+images remain read-only. Low-level track formatting is not implemented.
+
+Use `--fdd_wr_prot=0` for writes. Boot with the drive empty, then drop the
+image on the emulator window. The Mac ROM can eject a non-bootable disk
+inserted at startup. Scripted insertion also works:
+
+```sh
+tools/chungusppc-drive.sh 'floppy /absolute/path/to/floppy.img'
+```
+
+Run the helper in the emulator's working directory. Use `/dev/fd0H1440` in
+MkLinux for 1.44 MiB media: its Linux driver rejects the generic `/dev/fd0`
+autodetect device. Verify data against the image: the Mach driver can return
+success from `dd` with no disk, or after refusing a write-protected write.
+The 6100 protection check left the entire host image unchanged. The 7500
+passed ext2 creation, filesystem writes and a host-side checksum comparison
+of a 715,340-byte file.
+The same disk then passed cold reads and additional filesystem writes on the
+6100 (AMIC DMA) and 6500 (O'Hare DBDMA), with file checksums also verified
+from the host image. These are representative controller tests, not separate
+audio/floppy checks on every model selector. Host tests also cover 720 KiB
+images, write protection, incomplete transfers and interrupt masking.
+
+Mach's floppy driver prints `HALISR` and `HALGetNextAddr` diagnostics during
+I/O; the console becomes quiet when the transfer completes.
 
 ## MkLinux R2
 

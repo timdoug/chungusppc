@@ -136,6 +136,13 @@ public:
     bool handled = false;
 };
 
+class FloppyImageEvent {
+public:
+    std::string image_path;
+    bool handled = false;
+    bool inserted = false;
+};
+
 class EventManager {
 public:
     static EventManager* get_instance() {
@@ -157,6 +164,15 @@ public:
     void feed_input_script();
     void post_cdrom_event(CdromImageEvent& event) {
         _cdrom_signal.emit(event);
+    }
+
+    void post_floppy_event(FloppyImageEvent& event) {
+        _floppy_signal.emit(event);
+    }
+
+    template <typename T>
+    void add_floppy_handler(T* inst, void (T::*func)(FloppyImageEvent&)) {
+        _floppy_signal.connect_method(inst, func);
     }
 
     template <typename T>
@@ -195,6 +211,7 @@ public:
         _keyboard_signal.disconnect_all();
         _gamepad_signal.disconnect_all();
         _cdrom_signal.disconnect_all();
+        _floppy_signal.disconnect_all();
         _post_signal.disconnect_all();
     }
 
@@ -213,6 +230,7 @@ private:
     CoreSignal<const KeyboardEvent&>   _keyboard_signal;
     CoreSignal<const GamepadEvent&>    _gamepad_signal;
     CoreSignal<CdromImageEvent&>       _cdrom_signal;
+    CoreSignal<FloppyImageEvent&>      _floppy_signal;
     CoreSignal<>                       _post_signal;
 
     uint64_t    events_captured = 0;
@@ -224,7 +242,8 @@ private:
 
     // one scripted input at a time, still to be handed to the guest
     struct InputAction {
-        enum class Kind : uint8_t { Key, Motion, Button } kind;
+        enum class Kind : uint8_t { Key, Motion, Button, Floppy } kind;
+        std::string image_path; // Kind::Floppy
         AdbKey  key;    // Kind::Key
         int16_t dx;     // Kind::Motion
         int16_t dy;     // Kind::Motion

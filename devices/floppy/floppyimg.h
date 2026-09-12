@@ -49,6 +49,8 @@ public:
     virtual int calc_phys_params(void) = 0;
     virtual int get_raw_disk_data(char* buf) = 0;
     virtual int export_data(void) = 0;
+    virtual bool supports_writes() const { return false; }
+    virtual bool write_sector(int sector, const char* data) { return false; }
 
     int get_data_size() const {
         return this->data_size;
@@ -97,9 +99,11 @@ public:
     RawFloppyImg(std::string& file_path);
     ~RawFloppyImg() = default;
 
-    int calc_phys_params(void);
-    int get_raw_disk_data(char* buf);
-    int export_data(void);
+    int calc_phys_params(void) override;
+    int get_raw_disk_data(char* buf) override;
+    int export_data(void) override;
+    bool supports_writes() const override { return true; }
+    bool write_sector(int sector, const char* data) override;
 };
 
 /** Converter for Disk Copy 4.2 images. */
@@ -112,6 +116,8 @@ public:
     int get_raw_disk_data(char* buf);
     int export_data(void);
 };
+
+bool is_floppy_image(const std::string& path);
 
 extern FloppyImgConverter* open_floppy_image(std::string& img_path);
 
