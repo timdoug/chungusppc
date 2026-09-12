@@ -337,9 +337,10 @@ is currently no emulated Ethernet controller for these models.
 
 ## IDE boot
 
-The 6400 and 6500 can boot Mac OS 7.6.1, Mach and Linux 2.0.40 from one IDE
-disk, with no SCSI disks or CDs attached. The existing emulator and guest
-binaries work; the disk layout and root-device settings need to match IDE.
+The 5400, 6400, 5500, 6500 and TAM can boot Mac OS 7.6.1, Mach and Linux 2.0.40
+from one IDE disk, with no SCSI disks or CDs attached. The existing emulator
+and guest binaries work; the disk layout and root-device settings need to
+match IDE.
 
 The [image preparation tool](../../tools/mklinux-ide-image.py) combines the
 working universal Mac OS disk and the documented MkLinux disk (`root` and
@@ -366,6 +367,8 @@ chungusppc -r -m pm6400 -b "6F5724C0 - Performa 6400.ROM" \
     --hdd_img mklinux-ide.img
 ```
 
+Use `-m pm5400` with the same ROM and settings for the 5400.
+
 For the 6500, use the same image with its ROM and RAM settings:
 
 ```sh
@@ -374,15 +377,17 @@ chungusppc -r -m pm6500 -b "6E92FE08 - Power Mac 6500.ROM" \
     --hdd_img mklinux-ide.img
 ```
 
-Keep the 6500 in Thousands of colors as described above, and run without
-`--realtime`. `--hdd_img` uses the board's default `Ide0:0` attachment. Leave
-`--hdd_img2` empty.
+Use `-m pm5500` or `-m tam` with the same ROM and settings for the other
+Gazelle models. Keep them in Thousands of colors as described above, and run
+without `--realtime`. `--hdd_img` uses the board's default `Ide0:0` attachment.
+Leave `--hdd_img2` empty.
 
-Both models passed login with `/dev/hda2` mounted read/write, active swap,
+All five models passed login with `/dev/hda2` mounted read/write, active swap,
 binary checksum comparisons, 4 MiB filesystem write/read checks, persistence
-after a guest reboot, and clean shutdown. The same image also retained its
-data across the move from the 6400 to the 6500. IDE boot on the 5400, 5500 and
-TAM remains untested.
+after a guest reboot, and clean shutdown. The same image retained its data
+when moved between models. Host-side reads of the image also verified the
+5400, 5500 and TAM's written data. These checks use 640×480 VGA output; the
+TAM's native LCD mode remains untested.
 
 ## 1. Create the disks
 
