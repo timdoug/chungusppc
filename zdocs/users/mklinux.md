@@ -251,9 +251,7 @@ slots and a Comm Slot II, with no built-in Ethernet. Period upgrades included
 Farallon PCI and Comm Slot II 10/100 cards
 ([Farallon's announcement](https://www.mactech.com/1998/09/28/npl-farallon-ships-10-100-for-comm-slot-ii/)).
 ChungusPPC currently emulates neither kind of Ethernet expansion card, so
-`--enet_backend=slirp` alone cannot provide networking on this model. Mach's
-DEC Tulip driver makes a compatible PCI card a candidate for future emulation;
-the card and Alchemy's PCI slot interrupt routing still need implementation.
+`--enet_backend=slirp` alone cannot provide networking on this model.
 
 ## Power Mac 6500, 5500 and Twentieth Anniversary Macintosh
 
@@ -285,16 +283,21 @@ workaround; it does not establish that all real Gazelle machines failed in
 The emulator must retain Gazelle's `pci_F1=AtiRageGT` board default when
 registering generic PCI-host settings. It also needs MESH PIO writes to drain
 each full FIFO burst, and the ATI DAC lookup table applied in RGB555 mode.
-The latter restores MkLinux's console colors. Mac OS's ATI acceleration still
-has incomplete monochrome drawing operations, which can leave text and icons
-missing; this pass does not claim complete graphics acceleration.
+The latter restores MkLinux's console colors. The ATI draw engine now handles
+the monochrome glyph uploads, pattern fills and raster operations used by Mac
+OS 7.6.1. On the 6500, text, icons and window repainting were checked at 640×480
+in 256, Thousands and Millions of colors. The 5500 and TAM also passed desktop
+and window-repainting checks at 640×480 in Thousands. See the
+[ATI drawing notes](../developers/atirage.md#mac-os-drawing) for remaining limits.
 
 The 6500, 5500 and TAM passed login, 4 MiB SCSI filesystem and raw IDE checksum
 comparisons, CD reads, persistence after a guest reboot, and clean shutdown.
 The 6500 also retained its test data across a cold start. These runs use
 640×480 VGA output; they do not cover the TAM's native LCD mode, every other
-built-in display mode, IDE boot, X, audio playback or floppy I/O. As on the
-6400, there is currently no emulated Ethernet controller for these models.
+built-in display mode, IDE boot, audio playback or floppy I/O. X/GNOME was
+also checked on the 6500 at 640×480 in Thousands, including terminal output
+and scrolling; X remains untested on the 5500 and TAM. As on the 6400, there
+is currently no emulated Ethernet controller for these models.
 
 ## 1. Create the disks
 

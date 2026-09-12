@@ -48,6 +48,8 @@ enum {
     ATI_DP_COLOR_SRC_HOST     = 2,
     ATI_DP_COLOR_SRC_BLIT     = 3,
     ATI_DP_MONO_SRC_ALWAYS_1  = 0,
+    ATI_DP_MONO_SRC_PATTERN   = 1,
+    ATI_DP_MONO_SRC_HOST      = 2,
     ATI_DP_MIX_SRC            = 7,
     ATI_SRC_TRAJ_UNBOUNDED    = 0,
     ATI_SRC_TRAJ_PATTERN      = 1,

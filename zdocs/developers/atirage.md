@@ -15,9 +15,33 @@ as linear intensities makes MkLinux's 16-bit console gray. This matches the
 and the retained Mach source's `video_ati.c:ati_setcolor`.
 
 The `directcolor` CTest checks independent component lookup, the shifted RGB555
-indices, palette changes, and framebuffer row strides. Mac OS 7.6.1 still uses
-monochrome source and host drawing operations that this accelerator does not
-implement; affected text and icons can be incomplete.
+indices, palette changes, and framebuffer row strides.
+
+# Mac OS drawing
+
+The Gazelle Mac OS 7.6.1 driver uses monochrome host bitmaps for text and icons,
+and 8×8 monochrome patterns for fills. The two pattern colors have independent
+raster operations; `DP_MIX=0x00030000` keeps foreground pixels and inverts
+background pixels. Ignoring these operations left missing text and icons.
+
+The rectangle path implements these patterns, monochrome host expansion, and
+the sixteen Boolean raster operations for fills and host uploads. Write masks
+preserve the untouched destination bits. Host uploads consume clipped pixels,
+honor `DP_BYTE_PIX_ORDER` and `HOST_BYTE_ALIGN`, and advance the destination
+trajectory only after the final pixel. Right-to-left uploads consume the most
+significant byte first. Eight-bit color uploads use the same raster operations.
+Pixel writes retain the existing Rage framebuffer byte order used by scanout.
+
+The `atirage` CTest checks these operations through register writes and VRAM
+readback, including transparent glyphs, packed and padded rows, clipping,
+reverse drawing, RGB555/RGB565/32-bit destinations, masks and trajectory updates.
+Mac OS on the 6500 was checked at 640×480 in 256, Thousands and Millions of
+colors, including depth changes, window movement and repainting. The 5500 and
+TAM also passed desktop and window-repainting checks at 640×480 in Thousands.
+
+Lines, monochrome framebuffer sources, direct-color host uploads and color
+comparison remain unimplemented. Screen-to-screen blits still support only
+source copies. The engine runs synchronously rather than modelling FIFO timing.
 
 # Memory Map
 
