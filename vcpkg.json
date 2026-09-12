@@ -1,7 +1,7 @@
 {
-  "name": "dingusppc",
+  "name": "chungusppc",
   "version-string": "0.01-pre",
-  "homepage": "https://github.com/dingusdev/dingusppc",
+  "homepage": "https://github.com/timdoug/chungusppc",
   "description": "Experimental Power Macintosh emulator",
   "license": "GPL-3.0-or-later",
   "dependencies": [

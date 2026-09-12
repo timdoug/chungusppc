@@ -271,7 +271,7 @@ CharIoSocket::CharIoSocket()
 {
     int rc;
 
-    path = "dingussocket";
+    path = "chungussocket";
 
     do {
         rc = unlink(path);

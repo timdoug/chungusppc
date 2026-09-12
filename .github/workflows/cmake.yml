@@ -65,7 +65,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v6
       with:
-        name: DingusPPC-LINUX
+        name: ChungusPPC-LINUX
         path: ${{github.workspace}}/build/bin
         retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
 
@@ -126,7 +126,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v6
       with:
-        name: DingusPPC-macOS-${{ matrix.arch }}
+        name: ChungusPPC-macOS-${{ matrix.arch }}
         path: ${{github.workspace}}/build/bin
         retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
 
@@ -196,7 +196,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: DingusPPC-MSYS
+          name: ChungusPPC-MSYS
           path: ${{github.workspace}}/build/bin
           retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
 
@@ -288,6 +288,6 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v6
       with:
-        name: DingusPPC-${{ matrix.upload_suffix }}
+        name: ChungusPPC-${{ matrix.upload_suffix }}
         path: ${{github.workspace}}/build/bin
         retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}

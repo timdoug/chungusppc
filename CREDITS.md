@@ -1,5 +1,8 @@
-# DingusPPC
+# ChungusPPC credits
 
+ChungusPPC is an independent fork of DingusPPC. The upstream contributors and
+third-party projects credited below made the original emulator possible.
+Original copyright and license notices are preserved in the source files.
 
 ## Developers
 
