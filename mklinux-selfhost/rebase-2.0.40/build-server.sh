@@ -14,6 +14,7 @@ yes '' | bash /tmp/Configure-2.0.40.stdin -d arch/osfmach3_ppc/config.in > /tmp/
 grep '^CONFIG_OSFMACH3=y$' .config
 grep '^CONFIG_ISO9660_FS=y$' .config
 grep '^CONFIG_NLS=y$' .config
+grep '^CONFIG_SOUND=y$' .config
 if grep -q '^CONFIG_UNSAFE_MMAP=y$' .config; then exit 1; fi
 printf 'CONFIG_DONE '; date
 make dep > /tmp/dep-2.0.40.log 2>&1
