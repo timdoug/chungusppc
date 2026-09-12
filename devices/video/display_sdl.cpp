@@ -28,7 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <string>
 
 /** Where a requested screenshot is written. */
-#define SCREENSHOT_PATH "dingusppc-screen.bmp"
+#define SCREENSHOT_PATH "chungusppc-screen.bmp"
 
 bool g_auto_grab_mouse = false;
 
@@ -490,7 +490,7 @@ void Display::update_window_title()
     SDL_GetWindowSize(impl->display_wnd, &width, &height);
     bool is_grabbed = SDL_GetRelativeMouseMode();
 
-    std::string new_window_title = "DingusPPC Display " +
+    std::string new_window_title = "ChungusPPC Display " +
         std::to_string(impl->display_w) + "x" + std::to_string(impl->display_h)
         + " " + std::to_string(int(std::round(impl->renderer_scale_x * 100))) + "%";
     if (is_grabbed)
