@@ -583,7 +583,9 @@ if (g_auto_grab_mouse) {
 }
 
 void Display::update_skipped() {
-    // SDL implementation does not care about skipped updates.
+    // A static framebuffer still needs one conversion for a requested capture.
+    if (screenshot_requested.load() && video_ctrl)
+        video_ctrl->set_draw_fb();
 }
 
 void Display::setup_hw_cursor(std::function<void(uint8_t *dst_buf, int dst_pitch)> draw_hw_cursor,
