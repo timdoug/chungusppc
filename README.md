@@ -28,9 +28,10 @@ reboot. MACE Ethernet passed DHCP, DNS, telnet and file transfers in both
 directions. Both motherboard ROM revisions work on the 8600/9600; the 9500
 also works with either of the two Mach64 GX card ROMs we tried.
 
-The model checks above cover the console; X hasn't been checked across the
-full list. Sound and floppies haven't been tested. Alchemy/Gazelle have no
-emulated Ethernet. ATI Rage text and window drawing work on the 6500/5500/TAM; some
+X/GNOME also works on the 7500 (Control video), 9500 (Mach64 GX) and 6500
+(ATI Rage). X hasn't been checked across the full list.
+Sound and floppies haven't been tested. Alchemy/Gazelle have no emulated
+Ethernet. ATI Rage text and window drawing work on the 6500/5500/TAM; some
 accelerator operations are still missing. Some models share the same emulated
 hardware, and some need a particular display mode. See the
 [model notes](zdocs/users/mklinux.md).
