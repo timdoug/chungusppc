@@ -49,6 +49,10 @@ build, installation, and cleanup commands.
   entry point and retain the unbounded wrappers supplied by `libsa_mach`.
   Read `%h` arguments as promoted `int` before narrowing them, as required by
   PowerPC varargs and GCC 2.95.4.
+* **AWACS:** enable the existing sound driver and convert little-endian stereo
+  into its scratch buffer. In-place conversion changed OSS fragments, so a
+  fragment submitted again after drain/restart was byte-swapped twice on
+  the 6100, whose AWACS lacks hardware byte swapping.
 * **build and devices:** use `KERNELRELEASE` with the `-osfmach3` suffix for
   modules, retain Mach headers/libraries, name the boot-parameter structure,
   and stop module compilation on a failed subdirectory. Keep ADB character

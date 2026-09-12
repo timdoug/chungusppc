@@ -499,6 +499,35 @@ partition map entry, including `Apple_partition_map` itself.
 `MkLinux.prefs` alongside it holds `bootos` (`MacOS` or `MkLinux`) and
 `bootdelay` in seconds. Raising the delay is worth it if you switch often.
 
+## Audio
+
+Build Linux with `CONFIG_SOUND=y` (now set in the retained `server.config`).
+Mach already includes the AWACS driver. The emulator converts both 16-bit
+sample byte orders, supplies silence while DMA is idle, and stops the host
+audio callback before destroying DMA state at shutdown.
+
+The 6100, 7500 and 6500 passed signed 16-bit stereo playback at 44.1 and
+22.05 kHz in both byte orders, including playback after a gap. All eight test
+buffers on each machine matched the samples delivered to the host audio backend.
+The OSS test is
+[`tools/mklinux-audio-test.c`](../../tools/mklinux-audio-test.c); compile and
+run it in the guest:
+
+```sh
+gcc -O2 -o audio-test mklinux-audio-test.c
+./audio-test
+```
+
+The 6100 also needs the retained Linux AWACS fix: its software byte-swap
+path now uses a separate buffer, so repeating an OSS fragment cannot swap
+it twice. The same Linux server works on all three machines.
+
+The 6500 also completed guest shutdown and host audio cleanup without a crash.
+
+Recording, other sample formats, mixer volume and input selection are not
+verified. The existing input backend supplies synthetic data; it does not
+capture a host microphone.
+
 ## MkLinux R2
 
 R2 ("MkLinux Release 2.0") is Linux 2.0.38 on the same microkernel, with a Red
