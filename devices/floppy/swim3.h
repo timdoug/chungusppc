@@ -26,6 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <devices/common/hwcomponent.h>
 #include <devices/floppy/superdrive.h>
+#include <core/hostevents.h>
 
 #include <cinttypes>
 #include <memory>
@@ -94,6 +95,7 @@ public:
     }
 
     int device_postinit();
+    void insert_image(FloppyImageEvent& event);
 
     // SWIM3 registers access
     uint8_t read(uint8_t reg_offset);
@@ -111,6 +113,7 @@ protected:
     void    stop_stepping();
     void    start_disk_access();
     void    disk_access();
+    bool    write_sector();
     void    stop_disk_access();
     void    init_timer(const uint8_t start_val);
     uint8_t calc_timer_val();
@@ -118,7 +121,7 @@ protected:
 private:
     std::unique_ptr<MacSuperdrive::MacSuperDrive> int_drive;
 
-    DmaBidirChannel*    dma_ch;
+    DmaBidirChannel*    dma_ch = nullptr;
 
     uint8_t timer_val; // internal timer that decrements at a 1 us rate
     uint8_t setup_reg;

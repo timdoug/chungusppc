@@ -125,7 +125,13 @@ Set the floppy disk image. `filename` is the name of the floppy disk you want to
 --fdd_wr_prot=1
 ```
 
-Set the floppy to read-only
+Set the floppy to read-only. Raw 720 KiB and 1.44 MiB MFM images also support sector writes with
+`--fdd_wr_prot=0`. Disk Copy 4.2 and GCR images remain read-only.
+
+Drop a floppy image on the emulator window to insert it into the empty drive.
+Eject the current disk in the guest before inserting another. Scripted input
+also accepts `floppy /path/to/disk.img`; it uses the launch-time write-protection
+setting.
 
 ```
 --hdd_img filename

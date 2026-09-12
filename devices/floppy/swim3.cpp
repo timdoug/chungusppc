@@ -90,6 +90,8 @@ int Swim3Ctrl::device_postinit()
         gMachineObj->get_comp_by_type(HWCompType::INT_CTRL));
     this->irq_id = this->int_ctrl->register_dev_int(IntSrc::SWIM3);
 
+    EventManager::get_instance()->add_floppy_handler(this, &Swim3Ctrl::insert_image);
+
     // if a floppy image was given "insert" it into the virtual superdrive
     std::string fd_image_path = GET_STR_PROP("fdd_img");
     int fd_write_prot = GET_BIN_PROP("fdd_wr_prot");
@@ -98,6 +100,18 @@ int Swim3Ctrl::device_postinit()
     }
 
     return 0;
+}
+
+void Swim3Ctrl::insert_image(FloppyImageEvent& event)
+{
+    if (event.handled) return;
+    event.handled = true;
+    if (this->int_drive->insert_disk(event.image_path, GET_BIN_PROP("fdd_wr_prot")))
+        return;
+    event.inserted = true;
+    this->int_flags |= INT_SENSE;
+    update_irq();
+    LOG_F(INFO, "Inserted floppy image: %s", event.image_path.c_str());
 }
 
 uint8_t Swim3Ctrl::read(uint8_t reg_offset)
@@ -115,6 +129,8 @@ uint8_t Swim3Ctrl::read(uint8_t reg_offset)
         return this->phase_lines;
     case Swim3Reg::Setup:
         return this->setup_reg;
+    case Swim3Reg::Status_Mode0:
+        return this->mode_reg;
     case Swim3Reg::Handshake_Mode1:
         if (this->mode_reg & SWIM3_DRIVE_1) { // internal drive?
             status_addr = ((this->mode_reg & SWIM3_HEAD_SELECT) >> 2) | (this->phase_lines & 7);
@@ -188,10 +204,11 @@ void Swim3Ctrl::write(uint8_t reg_offset, uint8_t value)
             }
         }
         this->mode_reg &= ~value;
+        update_irq();
         break;
     case Swim3Reg::Handshake_Mode1:
         // ones in value set the corresponding bits in the mode register
-        if ((this->mode_reg ^ value) & (SWIM3_GO | SWIM3_GO_STEP)) {
+        if ((value & ~this->mode_reg) & (SWIM3_GO | SWIM3_GO_STEP)) {
             if (value & SWIM3_GO_STEP) {
                 start_stepping();
             } else {
@@ -199,6 +216,7 @@ void Swim3Ctrl::write(uint8_t reg_offset, uint8_t value)
             }
         }
         this->mode_reg |= value;
+        update_irq();
         break;
     case Swim3Reg::Step:
         this->step_count = value;
@@ -214,6 +232,7 @@ void Swim3Ctrl::write(uint8_t reg_offset, uint8_t value)
         break;
     case Swim3Reg::Interrupt_Mask:
         this->int_mask = value;
+        update_irq();
         break;
     default:
         LOG_F(INFO, "SWIM3: writing 0x%X to register 0x%X", value, reg_offset);
@@ -222,12 +241,11 @@ void Swim3Ctrl::write(uint8_t reg_offset, uint8_t value)
 
 void Swim3Ctrl::update_irq()
 {
-    if (this->mode_reg & SWIM3_INT_ENA) {
-        uint8_t new_irq = !!(this->int_flags & this->int_mask);
-        if (new_irq != this->irq) {
-            this->irq = new_irq;
-            this->int_ctrl->ack_int(this->irq_id, new_irq);
-        }
+    uint8_t new_irq = (this->mode_reg & SWIM3_INT_ENA) &&
+                      (this->int_flags & this->int_mask);
+    if (new_irq != this->irq) {
+        this->irq = new_irq;
+        this->int_ctrl->ack_int(this->irq_id, new_irq);
     }
 }
 
@@ -307,11 +325,6 @@ void Swim3Ctrl::start_disk_access()
         return;
     }
 
-    if (this->mode_reg & SWIM3_WR_MODE) {
-        LOG_F(ERROR, "SWIM3: writing not implemented yet");
-        return;
-    }
-
     this->mode_reg |= SWIM3_GO;
     LOG_F(9, "SWIM3: disk access started!");
 
@@ -352,8 +365,24 @@ void Swim3Ctrl::disk_access()
         }
         break;
     case SWIM3_DATA_XFER:
-        // transfer sector data over DMA
-        this->dma_ch->push_data(this->int_drive->get_sector_data_ptr(this->cur_sector & 0x7F), 512);
+        if (this->mode_reg & SWIM3_WR_MODE) {
+            if (!this->write_sector()) {
+                this->stop_disk_access();
+                this->error |= 1; // write underrun
+                this->int_flags |= INT_ERROR;
+                update_irq();
+                return;
+            }
+        } else {
+            char* data = this->int_drive->get_sector_data_ptr(this->cur_sector & 0x7F);
+            if (!data || !this->dma_ch || this->dma_ch->push_data(data, 512) == NoData) {
+                this->stop_disk_access();
+                this->error |= 4; // read overrun
+                this->int_flags |= INT_ERROR;
+                update_irq();
+                return;
+            }
+        }
         if (--this->xfer_cnt == 0) {
             this->stop_disk_access();
             // generate sector_done interrupt
@@ -379,11 +408,68 @@ void Swim3Ctrl::disk_access()
 
 void Swim3Ctrl::stop_disk_access()
 {
+    this->mode_reg &= ~SWIM3_GO;
+    this->cur_state = SWIM3_IDLE;
     // cancel disk access timer
     if (this->access_timer_id) {
         TimerManager::get_instance()->cancel_timer(this->access_timer_id);
         this->access_timer_id = 0;
     }
+}
+
+bool Swim3Ctrl::write_sector()
+{
+    // MFM writes include gap/sync bytes, an escaped data mark, 512 unescaped
+    // data bytes, a CRC command, FIFO padding and a DMA termination command.
+    // See MkLinux's swimiii.h and HALWriteSector in swimiiicommonhal.c.
+    if (!this->dma_ch || (this->setup_reg & 0x44) ||
+        (this->mode_reg & SWIM3_FORMAT_MODE))
+        return false;
+    auto read_byte = [&](uint8_t& value) {
+        uint8_t* data = nullptr;
+        uint32_t count = 0;
+        if (this->dma_ch->pull_data(1, &count, &data) != MoreData || count != 1 || !data)
+            return false;
+        value = *data;
+        return true;
+    };
+    bool escaped = false, data_mark = false, payload = false;
+    uint8_t byte;
+    for (int i = 0; i < 256 && !payload; ++i) {
+        if (!read_byte(byte)) return false;
+        if (escaped) {
+            if (byte == 0xFB) data_mark = true;
+            if (byte == 0x0F && data_mark) payload = true;
+            escaped = false;
+        } else {
+            escaped = byte == 0x99;
+        }
+    }
+    if (!payload) return false;
+    char sector[512];
+    for (auto& value : sector) {
+        if (!read_byte(byte)) return false;
+        value = byte;
+    }
+    escaped = false;
+    bool crc = false;
+    for (int i = 0; i < 64; ++i) {
+        if (!read_byte(byte)) return false;
+        if (escaped) {
+            if (byte == 0x04) crc = true;
+            if (byte == 0x08) {
+                // Retire the final descriptor without consuming another byte.
+                uint32_t count;
+                uint8_t* data;
+                this->dma_ch->pull_data(0, &count, &data);
+                return crc && this->int_drive->write_sector_data(this->cur_sector & 0x7F, sector);
+            }
+            escaped = false;
+        } else {
+            escaped = byte == 0x99;
+        }
+    }
+    return false;
 }
 
 void Swim3Ctrl::init_timer(const uint8_t start_val)

@@ -86,6 +86,7 @@ enum : uint64_t {
     DMA0_INT_SHIFT      = 24,
         DMA0_INT_ENET_RX = 1 << 4,
         DMA0_INT_ENET_TX = 1 << 5,
+        DMA0_INT_FLOPPY  = 1 << 6,
     DMA1_INT_SHIFT      = 32,
         DMA1_INT_SOUND  = 1 << 1,
 };
@@ -149,15 +150,24 @@ public:
     void            reset(const uint32_t addr_ptr);
     void            write_ctrl(const uint8_t value);
     uint8_t         read_stat() { return this->stat; }
+    void init_interrupts(InterruptCtrl* controller, uint64_t irq) {
+        int_ctrl = controller;
+        irq_id = irq;
+    }
 
     DmaPushResult   push_data(const char* src_ptr, int len);
     DmaPullResult   pull_data(uint32_t req_len, uint32_t *avail_len,
                                       uint8_t **p_data);
 
 private:
-    uint32_t        addr_ptr;
-    uint16_t        byte_count;
-    uint8_t         stat;
+    void complete();
+    void update_irq();
+    uint32_t        addr_ptr = 0;
+    uint16_t        byte_count = 0;
+    uint8_t         stat = 0;
+    InterruptCtrl*  int_ctrl = nullptr;
+    uint64_t        irq_id = 0;
+    bool            irq_level = false;
 };
 
 /** AMIC specific Serial Transmit DMA channel. */

@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <loguru.hpp>
 
 #include <cinttypes>
+#include <cstring>
 
 namespace loguru {
     enum : Verbosity {
@@ -84,10 +85,16 @@ MacSuperDrive::MacSuperDrive(std::string name)
 void MacSuperDrive::reset_params()
 {
     this->media_kind    = MediaKind::high_density;
+    this->wr_protect    = 1;
+    this->rec_method    = RecMethod::MFM;
+    this->num_tracks    = 80;
+    this->num_sides     = 2;
+    this->step_dir      = 1;
     this->has_disk      = 0; // drive is empty
     this->motor_stat    = 0; // spindle motor is off
     this->motor_on_time = 0;
     this->cur_track     = 0; // current head position
+    this->cur_head      = 0;
     this->is_ready      = 0; // drive not ready
 
     // come up in the MFM mode by default
@@ -238,15 +245,18 @@ int MacSuperDrive::insert_disk(std::string& img_path, int write_flag = 0)
         this->disk_data = std::unique_ptr<char[]>(new char[this->img_conv->get_data_size()]);
 
         // swallow all raw disk data at once!
-        this->img_conv->get_raw_disk_data(this->disk_data.get());
+        if (this->img_conv->get_raw_disk_data(this->disk_data.get()))
+            return -1;
 
         // disk is write-enabled by default
-        this->wr_protect = write_flag;
+        this->wr_protect = write_flag || !this->img_conv->supports_writes() ||
+                           this->rec_method != RecMethod::MFM;
 
         // everything is set up, let's say we got a disk
         this->has_disk = 1;
     } else {
         this->has_disk = 0;
+        return -1;
     }
 
     return 0;
@@ -440,9 +450,28 @@ char* MacSuperDrive::get_sector_data_ptr(int sector_num)
 {
     LOG_F(READWRITE, "%s: get_sector_data_ptr track:%d head:%d sector:%d",
         this->get_name().c_str(), this->cur_track, this->cur_head, sector_num);
+    if (!this->has_disk)
+        return nullptr;
+    int sector_index = sector_num - (this->rec_method == RecMethod::MFM ? 1 : 0);
+    if (this->cur_track < 0 || this->cur_track >= this->num_tracks ||
+        this->cur_head >= this->num_sides || sector_index < 0 ||
+        sector_index >= this->sectors_per_track[this->cur_track])
+        return nullptr;
     return this->disk_data.get() +
         ((this->track2lblk[this->cur_track] +
          (this->cur_head * this->sectors_per_track[this->cur_track]) +
-          sector_num - 1) * 512
+          sector_index) * 512
     );
+}
+
+bool MacSuperDrive::write_sector_data(int sector_num, const char* data)
+{
+    char* destination = this->get_sector_data_ptr(sector_num);
+    if (this->wr_protect || !destination)
+        return false;
+    int block = (destination - this->disk_data.get()) / BLOCK_SIZE;
+    if (!this->img_conv->write_sector(block, data))
+        return false;
+    std::memcpy(destination, data, BLOCK_SIZE);
+    return true;
 }

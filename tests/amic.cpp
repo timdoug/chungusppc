@@ -121,6 +121,44 @@ int main() {
         irq(IntSrc::SCSI_CURIO2, false);
         check(!int_pin, "second SCSI acknowledgement releases CPU");
 
+        // AMIC floppy DMA uses a counted buffer in either direction.
+        AmicFloppyDma floppy;
+        floppy.init_interrupts(&amic, uint64_t(0x40) << DMA0_INT_SHIFT);
+        const char sector[] = "floppy DMA payload";
+        floppy.reset(0x1000);
+        floppy.reinit(0x1000, sizeof(sector));
+        check(floppy.push_data(sector, sizeof(sector)) == DmaPushResult::NoData,
+              "stopped floppy DMA refuses input");
+        floppy.write_ctrl(2);
+        floppy.push_data(sector, 5);
+        check(floppy.read_stat() == 2, "partial floppy input keeps RUN set");
+        floppy.push_data(sector + 5, sizeof(sector) - 5);
+        check(floppy.read_stat() == 0x80 && !int_pin &&
+              std::memcmp(ram + 0x1000, sector, sizeof(sector)) == 0,
+              "floppy input completion copies the counted buffer and stops");
+        floppy.write_ctrl(8);
+        check(int_pin && read(AMICReg::DMA_IFR_0) == 0x40,
+              "unmasking floppy completion asserts DMA bit six");
+        floppy.write_ctrl(0x80);
+        check(!int_pin, "floppy completion acknowledgement releases IRQ");
+        floppy.reinit(0x1000, sizeof(sector));
+        floppy.write_ctrl(0x4A);
+        check(floppy.push_data(sector, 1) == DmaPushResult::NoData,
+              "floppy write direction refuses input");
+        uint32_t available;
+        uint8_t* bytes;
+        floppy.pull_data(5, &available, &bytes);
+        check(available == 5 && std::memcmp(bytes, sector, 5) == 0 && !int_pin,
+              "floppy output starts at its programmed buffer");
+        floppy.pull_data(100, &available, &bytes);
+        check(available == sizeof(sector) - 5 &&
+              std::memcmp(bytes, sector + 5, available) == 0 && int_pin,
+              "floppy output respects the remaining count and interrupts");
+        check(floppy.pull_data(1, &available, &bytes) == DmaPullResult::NoMoreData &&
+              available == 0 && !bytes, "completed floppy output cannot repeat data");
+        floppy.reset(0x1000);
+        check(!int_pin && !(floppy.read_stat() & 0x82), "floppy reset clears RUN and IRQ");
+
         // MkLinux writes the codec command high byte first, then polls bit 7.
         write(AMICReg::Snd_Ctrl_0, 0);
         write(AMICReg::Snd_Ctrl_1, 0);

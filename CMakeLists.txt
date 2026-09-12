@@ -346,6 +346,16 @@ if (DPPC_BUILD_DEVICE_TESTS)
         $<TARGET_OBJECTS:loguru>)
     target_link_libraries(testaudio PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
     add_test(NAME audio COMMAND testaudio)
+    add_executable(testswim3 tests/swim3.cpp tests/headless_display.cpp
+        $<TARGET_OBJECTS:core>
+        $<TARGET_OBJECTS:cpu_ppc>
+        $<TARGET_OBJECTS:debugger>
+        $<FILTER:$<TARGET_OBJECTS:devices>,EXCLUDE,display_sdl>
+        $<TARGET_OBJECTS:machines>
+        $<TARGET_OBJECTS:utils>
+        $<TARGET_OBJECTS:loguru>)
+    target_link_libraries(testswim3 PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
+    add_test(NAME swim3 COMMAND testswim3)
     add_executable(testtimers tests/timers.cpp core/timermanager.cpp
         $<TARGET_OBJECTS:loguru>)
     target_link_libraries(testtimers PRIVATE ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})

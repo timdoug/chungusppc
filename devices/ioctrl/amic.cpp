@@ -117,6 +117,7 @@ AMIC::AMIC() : MMIODevice()
     // initialize floppy disk HW
     this->swim3 = dynamic_cast<Swim3::Swim3Ctrl*>(gMachineObj->get_comp_by_name("Swim3"));
     this->floppy_dma = std::unique_ptr<AmicFloppyDma> (new AmicFloppyDma());
+    this->floppy_dma->init_interrupts(this, DMA0_INT_FLOPPY << DMA0_INT_SHIFT);
     this->swim3->set_dma_channel(this->floppy_dma.get());
 }
 
@@ -915,6 +916,7 @@ void AmicFloppyDma::reset(const uint32_t addr_ptr)
     this->stat &= 0x48; // clear interrupt flag, RUN and RST bits
     this->addr_ptr   = addr_ptr;
     this->byte_count = 0;
+    this->update_irq();
 }
 
 void AmicFloppyDma::reinit(const uint32_t addr_ptr, const uint16_t byte_cnt)
@@ -932,10 +934,30 @@ void AmicFloppyDma::write_ctrl(uint8_t value)
     if (value & 0x80) {
         this->stat &= 0x7F;
     }
+    this->update_irq();
+}
+
+void AmicFloppyDma::update_irq()
+{
+    bool level = (stat & 0x88) == 0x88;
+    if (int_ctrl && level != irq_level) {
+        irq_level = level;
+        int_ctrl->ack_dma_int(irq_id, level);
+    }
+}
+
+void AmicFloppyDma::complete()
+{
+    if (!byte_count) {
+        stat = (stat & ~2) | 0x80;
+        update_irq();
+    }
 }
 
 DmaPushResult AmicFloppyDma::push_data(const char* src_ptr, int len)
 {
+    if ((this->stat & 0x42) != 2 || !this->byte_count || len <= 0)
+        return DmaPushResult::NoData;
     len = std::min((int)this->byte_count, len);
 
     MapDmaResult res = mmu_map_dma_mem(this->addr_ptr, len, false);
@@ -947,9 +969,7 @@ DmaPushResult AmicFloppyDma::push_data(const char* src_ptr, int len)
 
     this->addr_ptr += len;
     this->byte_count -= len;
-    if (!this->byte_count) {
-        LOG_F(WARNING, "AMIC: DMA interrupts not implemented yet");
-    }
+    this->complete();
 
     return DmaPushResult::PushedData;
 }
@@ -957,7 +977,18 @@ DmaPushResult AmicFloppyDma::push_data(const char* src_ptr, int len)
 DmaPullResult AmicFloppyDma::pull_data(uint32_t req_len, uint32_t *avail_len,
                                        uint8_t **p_data)
 {
-    return DmaPullResult::NoMoreData;
+    *avail_len = 0;
+    *p_data = nullptr;
+    if ((this->stat & 0x42) != 0x42 || !this->byte_count || !req_len)
+        return DmaPullResult::NoMoreData;
+    uint32_t length = std::min(req_len, uint32_t(this->byte_count));
+    auto memory = mmu_map_dma_mem(this->addr_ptr, length, false);
+    *p_data = memory.host_va;
+    *avail_len = length;
+    this->addr_ptr += length;
+    this->byte_count -= length;
+    this->complete();
+    return DmaPullResult::MoreData;
 }
 
 // ============================ SCSI DMA stuff ================================

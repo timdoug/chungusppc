@@ -112,6 +112,7 @@ public:
     uint64_t next_sector_delay();
     SectorHdr current_sector_header();
     char* get_sector_data_ptr(int sector_num);
+    bool write_sector_data(int sector_num, const char* data);
     uint64_t sector_data_delay();
 
     double get_current_track_delay();

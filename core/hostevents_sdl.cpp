@@ -23,6 +23,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <core/coresignal.h>
 #include <cpu/ppc/ppcemu.h>
 #include <devices/common/adb/adbkeyboard.h>
+#include <devices/floppy/floppyimg.h>
 #include <loguru.hpp>
 #include <SDL.h>
 
@@ -74,6 +75,7 @@ void EventManager::set_keyboard_locale(uint32_t keyboard_id) {
 //     mouse up              release it
 //     mouse step 32         pixels per report, to trade speed for accuracy
 //     mouse rate 16         milliseconds between reports
+//     floppy path.img       insert a floppy into the empty drive
 //
 // A position is only ever approximate. "mouse to" drives the pointer into the
 // corner first because nothing here knows where the guest is drawing it, and
@@ -250,6 +252,14 @@ void EventManager::load_input_script() {
             for (auto it = mods.rbegin(); it != mods.rend(); ++it)
                 this->queue_key(*it, false);
             queued++;
+        } else if (verb == "floppy") {
+            InputAction action{};
+            action.kind = InputAction::Kind::Floppy;
+            std::getline(ls >> std::ws, action.image_path);
+            if (!action.image_path.empty()) {
+                this->input_queue.push_back(action);
+                queued++;
+            }
         } else if (verb == "mouse") {
             std::string what;
             ls >> what;
@@ -333,6 +343,13 @@ void EventManager::feed_input_script() {
     this->input_queue.pop_front();
 
     switch (act.kind) {
+    case InputAction::Kind::Floppy: {
+        FloppyImageEvent event;
+        event.image_path = act.image_path;
+        this->post_floppy_event(event);
+        if (!event.handled) LOG_F(ERROR, "No floppy drive is available");
+        break;
+    }
     case InputAction::Kind::Key: {
         KeyboardEvent ke{};
         ke.key   = act.key;
@@ -638,8 +655,14 @@ void EventManager::poll_events() {
 
         case SDL_DROPFILE: {
                 const char* path = event.drop.file;
-                // TODO: Distinguish CD-ROM and floppy images once dynamic
-                // floppy insertion is supported.
+                if (is_floppy_image(path)) {
+                    FloppyImageEvent floppy_event;
+                    floppy_event.image_path = path;
+                    this->post_floppy_event(floppy_event);
+                    if (!floppy_event.handled) LOG_F(ERROR, "No floppy drive is available");
+                    SDL_free(event.drop.file);
+                    break;
+                }
                 CdromImageEvent cdrom_event{};
                 cdrom_event.image_path = path;
                 this->post_cdrom_event(cdrom_event);
