@@ -278,8 +278,9 @@ The 6400 also passed Xpmac/GNOME at 640×480 with 16-bit pixels, started with
 and scrolling, overlapping windows, dragging and repainting, `chvt` between
 console VT 1 and X on VT 7, and exiting X back to a working color console.
 The guest shut down cleanly. No additional emulator or guest changes were
-needed. X remains untested on the 5400. Booting from IDE, audio playback and
-floppy I/O remain untested; the 6400 desktop run logged audio DMA errors.
+needed. X remains untested on the 5400. Audio playback and floppy I/O remain
+untested; the 6400 desktop run logged audio DMA errors. See [IDE boot](#ide-boot)
+below for the single-disk configuration.
 
 The [6400 specifications](https://support.apple.com/en-ca/112092) list two PCI
 slots and a Comm Slot II, with no built-in Ethernet. Period upgrades included
@@ -329,10 +330,59 @@ The 6500, 5500 and TAM passed login, 4 MiB SCSI filesystem and raw IDE checksum
 comparisons, CD reads, persistence after a guest reboot, and clean shutdown.
 The 6500 also retained its test data across a cold start. These runs use
 640×480 VGA output; they do not cover the TAM's native LCD mode, every other
-built-in display mode, IDE boot, audio playback or floppy I/O. X/GNOME was
+built-in display mode, audio playback or floppy I/O. X/GNOME was
 also checked on the 6500 at 640×480 in Thousands, including terminal output
 and scrolling; X remains untested on the 5500 and TAM. As on the 6400, there
 is currently no emulated Ethernet controller for these models.
+
+## IDE boot
+
+The 6400 and 6500 can boot Mac OS 7.6.1, Mach and Linux 2.0.40 from one IDE
+disk, with no SCSI disks or CDs attached. The existing emulator and guest
+binaries work; the disk layout and root-device settings need to match IDE.
+
+The [image preparation tool](../../tools/mklinux-ide-image.py) combines the
+working universal Mac OS disk and the documented MkLinux disk (`root` and
+`swap` partitions, configured as `/dev/sdb2` and `/dev/sdb3`). Shut down any
+emulator using those source disks before running it:
+
+```sh
+python3 tools/mklinux-ide-image.py universal-macos.img mklinux.img mklinux-ide.img
+```
+
+It creates a new image and refuses to overwrite an existing file. The Mac HFS
+volume and driver area keep their physical offsets. Linux root and swap are
+appended, and the partition map assigns them numbers 2 and 3; HFS becomes
+partition 4. The tool changes `rootdev` in the Mac volume's `lilo.conf` to
+`/dev/hda2` and changes Linux's `/etc/fstab` to use `/dev/hda2` and `/dev/hda3`.
+The input disks stay untouched.
+
+Boot the resulting image on the 6400:
+
+```sh
+chungusppc -r -m pm6400 -b "6F5724C0 - Performa 6400.ROM" \
+    --rambank1_size 32 --rambank2_size 32 \
+    --rambank3_size 32 --rambank4_size 32 --mon_id=VGA-SVGA \
+    --hdd_img mklinux-ide.img
+```
+
+For the 6500, use the same image with its ROM and RAM settings:
+
+```sh
+chungusppc -r -m pm6500 -b "6E92FE08 - Power Mac 6500.ROM" \
+    --rambank1_size 64 --rambank2_size 64 --mon_id=VGA-SVGA \
+    --hdd_img mklinux-ide.img
+```
+
+Keep the 6500 in Thousands of colors as described above, and run without
+`--realtime`. `--hdd_img` uses the board's default `Ide0:0` attachment. Leave
+`--hdd_img2` empty.
+
+Both models passed login with `/dev/hda2` mounted read/write, active swap,
+binary checksum comparisons, 4 MiB filesystem write/read checks, persistence
+after a guest reboot, and clean shutdown. The same image also retained its
+data across the move from the 6400 to the 6500. IDE boot on the 5400, 5500 and
+TAM remains untested.
 
 ## 1. Create the disks
 

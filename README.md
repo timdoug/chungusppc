@@ -27,6 +27,7 @@ We've checked color consoles, disk and CD checksums, and files surviving a
 reboot. MACE Ethernet passed DHCP, DNS, telnet and file transfers in both
 directions. Both motherboard ROM revisions work on the 8600/9600; the 9500
 also works with either of the two Mach64 GX card ROMs we tried.
+The 6400 and 6500 also boot Mac OS and MkLinux from a single IDE disk.
 
 X/GNOME also works on the 6100, 6400, 6500, 7500 and 9500. X hasn't been
 checked across the full list.
