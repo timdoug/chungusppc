@@ -1,4 +1,4 @@
-# DingusPPC User Manual
+# ChungusPPC User Manual
 
 ## Implemented Features
 
@@ -32,11 +32,11 @@ You may also want to use a third-party program like BlueSCSI to convert a raw HF
 
 ## Windows
 
-DingusPPC uses two windows when booted up; a command line window and a monitor window to display the machine.
+ChungusPPC uses two windows when booted up; a command line window and a monitor window to display the machine.
 
 ## Commands
 
-DingusPPC is operated using the command line interface. As such, we will list the commands as required. These commands are separated by spaces.
+ChungusPPC is operated using the command line interface. As such, we will list the commands as required. These commands are separated by spaces.
 
 ```
 -r, --run
@@ -90,7 +90,7 @@ Set Open Firmware variables at startup, where `args` is a string where you enter
 list machines
 ```
 
-Shows the currently implemented machines within DingusPPC.
+Shows the currently implemented machines within ChungusPPC.
 
 ```
 list properties
@@ -188,19 +188,19 @@ Set the ADB devices to attach where `device_name` is the name of the device to a
 ### Command Line Examples
 
 ```
-dingusppc -b bootrom-6100.bin --rambank1_size 64 --rambank2_size 64 --hdd_img "System_712.dsk"
+chungusppc -b bootrom-6100.bin --rambank1_size 64 --rambank2_size 64 --hdd_img "System_712.dsk"
 ```
 
 The user has specified their own ROM file, which is for a Power Macintosh 6100 and has also set up two separate RAM banks to use 64 MB each. Note that if a second RAM bank is to be specified for the 6100, it should be the same size as the first RAM bank. With only a hard disk specified, the machine will immediately boot to the OS on the hard disk.
 
 ```
-dingusppc -b "Power_Mac_G3_Beige.ROM" -r --rambank1_size 128 --fdd_img "DiskTools_8.5.img"
+chungusppc -b "Power_Mac_G3_Beige.ROM" -r --rambank1_size 128 --fdd_img "DiskTools_8.5.img"
 ```
 
 Here, the user has attached a floppy disk image. They've chosen to boot it from a G3 and the first RAM bank is set to 128 MB.
 
 ```
-dingusppc -b "Power_Mac_G3_Beige.ROM" -d --rambank1_size 64 --rambank2_size 64 --cdr_img "OpenDarwin_662.cdr"
+chungusppc -b "Power_Mac_G3_Beige.ROM" -d --rambank1_size 64 --rambank2_size 64 --cdr_img "OpenDarwin_662.cdr"
 ```
 
 The debugger is enabled here, due to the presence of `-d`. The CD ROM image will be loaded in.
@@ -236,13 +236,13 @@ without a human in front of the window. This is useful for scripting an install
 or for reaching a guest that has no serial console or network yet.
 
 Sending `SIGUSR1` writes the guest's screen, at the guest's own resolution, to
-`dingusppc-screen.bmp` in the working directory:
+`chungusppc-screen.bmp` in the working directory:
 
 ```
-kill -USR1 $(pgrep dingusppc)
+kill -USR1 $(pgrep chungusppc)
 ```
 
-Sending `SIGUSR2` reads `dingusppc-input.txt` from the working directory and
+Sending `SIGUSR2` reads `chungusppc-input.txt` from the working directory and
 types it into the guest. Each line is either `text` followed by characters to
 type, or `key` followed by the name of a single key, optionally prefixed with
 `Shift+`, `Control+`, `Option+` or `Command+`. Lines starting with `#` are
@@ -286,17 +286,17 @@ mouse step 32
 mouse rate 16
 ```
 
-`tools/dppc-drive.sh` wraps both: it types its arguments and then captures the
+`tools/chungusppc-drive.sh` wraps both: it types its arguments and then captures the
 screen. Run it from the emulator's working directory.
 
 ```
-tools/dppc-drive.sh 'text root' 'key RETURN'
+tools/chungusppc-drive.sh 'text root' 'key RETURN'
 ```
 
-Set `DPPC_WAIT` to override how long it waits for the queue to drain, which a
+Set `CHUNGUSPPC_WAIT` to override how long it waits for the queue to drain, which a
 pointer move needs since it is made of many small steps.
 
-Once the guest has networking, `tools/dppc-shell.py` is easier still — it runs
+Once the guest has networking, `tools/chungusppc-shell.py` is easier still — it runs
 commands over telnet and prints their output, given `--enet_hostfwd=tcp:2323:23`.
 
 ## Accessing Open Firmware
@@ -327,7 +327,7 @@ Currently, ISO images are supported. However, support is not yet implemented for
 
 ### Hard Disks
 
-Because Sheepshaver, Basilisk II, and Mini vMac operate on raw disks, it is required to a program such as BlueSCSI to make their hard disk images work in an emulator like DingusPPC. This is because the Mac OS normally requires certain values in the hard disks that these emulators don't normally insert into the images. You may also need a third-party utility to create an HFS or HFS+ disk image.
+Because Sheepshaver, Basilisk II, and Mini vMac operate on raw disks, it is required to a program such as BlueSCSI to make their hard disk images work in an emulator like ChungusPPC. This is because the Mac OS normally requires certain values in the hard disks that these emulators don't normally insert into the images. You may also need a third-party utility to create an HFS or HFS+ disk image.
 
 ### OS Support
 

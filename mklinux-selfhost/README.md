@@ -8,7 +8,7 @@ ignored by Git. Extracted host trees and transfer archives are disposable.
 
 ## Prepare on the host
 
-From the DingusPPC repository root, with Python 3 and Git installed:
+From the ChungusPPC repository root, with Python 3 and Git installed:
 
 ```sh
 python3 mklinux-selfhost/prepare-sources.py --check
@@ -76,7 +76,7 @@ overwriting a different sandbox configuration. The final log marker is
 It contains the kernel and bootstrap, with no diagnostic probes. Installation
 is separate: copy this image to the Mac boot volume's
 `System Folder:Extensions:Mach Kernel` data fork. If using host hfsutils, shut
-the guest down cleanly and stop DingusPPC before modifying `macos.img`:
+the guest down cleanly and stop ChungusPPC before modifying `macos.img`:
 
 ```sh
 hmount macos.img

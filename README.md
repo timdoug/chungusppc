@@ -1,137 +1,83 @@
-# DingusPPC
+# ChungusPPC
 
-Written by The DingusPPC Development Team
+![MkLinux 2.0.40 running Dillo and browsing Hacker News](2.0.40_dillo_tls.png)
 
-(who are Divingkatae, maximumspatium, joevt, mihaip, kkaisershot, Cacodemon345, Wack0, et. al. Check CREDITS.md for more info)
+A [DingusPPC](https://github.com/dingusdev/dingusppc) fork for running
+and rebuilding MkLinux on emulated Power Macs.
 
-Be warned the program is highly unfinished and could use a lot of testing. Any feedback is welcome.
+Big thanks to the DingusPPC crew. We use AI tools, so we're keeping this work
+in a separate fork out of respect for their contribution policy.
 
-## Philosophy of Use
+[Contributing](CONTRIBUTING.md) · [Credits](CREDITS.md)
 
-While many other PowerPC emus exist (PearPC, Sheepshaver), none of them currently attempt emulation of PowerPC Macs
-accurately (except for QEMU).
+## MkLinux status
 
-This program aims to not only improve upon what Sheepshaver, PearPC, and other PowerPC Mac emulators have done, but
-also to provide a better debugging environment. This currently is designed to work best with PowerPC NuBus and Old
-World ROMs, including those of the Power Mac 6100, 7200, and G3 Beige.
+We've rebuilt Mach and ported the MkLinux server to Linux 2.0.40. The same
+binaries boot on these 16 emulated Macs, using Mac OS 7.6.1 and the R2 booter:
 
-## Implemented Features
+| Family | Tested models |
+| --- | --- |
+| NuBus Power Macs | 6100, 7100, 8100 |
+| Early PCI Power Macs | 7200, 7300, 7500, 7600, 8500, 8600 |
+| PCI with Mach64 GX | 9500, 9600 |
+| Alchemy | 5400, 6400 |
+| Gazelle | 5500, 6500, Twentieth Anniversary Macintosh |
 
-Several machines have been implemented to varying degrees, like many Old World PowerPC Macs, early New World
-PowerPC Macs, and the Pippin.
+We've checked color consoles, disk and CD checksums, and files surviving a
+reboot. MACE Ethernet passed DHCP, DNS, telnet and file transfers in both
+directions. Both motherboard ROM revisions work on the 8600/9600; the 9500
+also works with either of the two Mach64 GX card ROMs we tried.
 
-This emulator has a debugging environment, complete with a disassembler. 
+The model checks above cover the console; X hasn't been checked across the
+full list. Sound and floppies haven't been tested. Alchemy/Gazelle have no
+emulated Ethernet, and ATI Rage drawing is incomplete. Some models share the
+same emulated hardware, and some need a particular display mode. See the
+[model notes](zdocs/users/mklinux.md).
 
-## How to Use
+The [build notes](mklinux-selfhost/README.md) have the patches, source checksums
+and commands for rebuilding Mach and Linux in MkLinux.
 
-This program currently uses the command prompt to work.
+## Build
 
-There are a few command line arguments one can enter when starting the program.
+Requires a C++20 compiler, CMake and SDL2. Install libslirp and pkg-config for
+user-mode networking; CMake enables it when found.
 
-```
--r, --run
-```
-
-Run the emulator. Currently only goes to an interpreter.
-
-```
--d, --debugger
-```
-
-Enter the interactive debugger.
-
-```
--b, --bootrom TEXT:FILE
-```
-
-Specifies the Boot ROM path. It otherwise looks for bootrom.bin.
-
-```
--m, --machine TEXT
-```
-
-Specify machine ID. Otherwise, the emulator will attempt to determine machine ID from the boot rom otherwise.
-
-As of now, the most complete machines are the Power Mac 6100, the Power Mac 7500, and the Power Mac G3 Beige.
-
-To go into to the debugger regardless of how you started the emulator, press Control and C on the terminal window.
-
-## How to Compile
-
-You need to install development tools first.
-
-At minimum, a C++20 compliant compiler and [CMake](https://cmake.org) are required.
-
-Clone the repository using the appropriate command:
-
-```
-git clone https://github.com/dingusdev/dingusppc
-```
-
-If this is from a mirror, replace the argument with the source you want to use instead.
-
-You will also have to recursive clone or run
-
-```
+```sh
+git clone https://github.com/timdoug/chungusppc
+cd chungusppc
 git submodule update --init --recursive
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
 ```
 
-This is because the CubeB, Capstone, and SDL2 modules are not included by default.
+The executable lands in:
 
-For SDL2, Linux users may also have to run:
+- Linux: `build/bin/chungusppc`
+- macOS: `build/bin/chungusppc.app/Contents/MacOS/chungusppc`
+- Windows: `build/bin/chungusppc.exe` (some generators add a `Release/` directory)
 
-```
-sudo apt install libsdl2-dev
-```
+## Run
 
-macOS users can use Homebrew or MacPorts to install SDL2.
+You'll need a machine ROM and disk images with Mac OS and MkLinux installed
+([setup guide](zdocs/users/mklinux.md)). For a 7200:
 
-CLI11 and loguru are already included in the thirdparty folder and compiled along with the rest of DingusPPC.
-
-For Raspbian, you may also need the following command:
-
-```
-sudo apt install doxygen graphviz
+```sh
+chungusppc -r -m pm7200 -b bootrom.bin --rambank1_size 128 \
+    --hdd_img "macos.img:mklinux.img" --enet_backend=slirp
 ```
 
-To build the project in a Unix-like environment, create a build folder, change the directory to the build folder,
-and use `cmake` to create the `Makefile` files in that build folder.
-Use `make` to do the building. You don't need to execute `cmake` again unless you add/remove/change options or
-source files.
+Use the executable path above if it isn't on your `PATH`.
+`chungusppc list machines` lists machines; `--help` lists options.
+`-d` starts the debugger; Ctrl-C enters it while the emulator is running. See the
+[user manual](zdocs/users/manual.md) for device settings and automation tools.
 
-```
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make
-```
+## Tests
 
-You may specify another build type using the variable `CMAKE_BUILD_TYPE`. 
-Each build type should have its own build folder.
-
-```
-mkdir build-debug
-cd build-debug
-cmake -DCMAKE_BUILD_TYPE=Debug ..
-make
+```sh
+cmake -S . -B build -DDPPC_BUILD_DEVICE_TESTS=ON
+cmake --build build -j
+ctest --test-dir build --output-on-failure
 ```
 
-## Testing
-
-DingusPPC includes a test suite for verifying the correctness of its PowerPC CPU
-emulation. To build the tests, use the following terminal commands:
-
-```
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DDPPC_BUILD_PPC_TESTS=True ..
-make testppc
-```
-
-## Intended Minimum Requirements
-
-- Windows 7 or newer (64-bit), Linux 4.4 or newer, Mac OS X 10.9 or newer (64-bit)
-- Intel Core 2 Duo or better
-- 2 GB of RAM
-- 2 GB of Hard Disk Space
-- Graphics Card with a minimum resolution of 800*600
+For the CPU tests, enable `-DDPPC_BUILD_PPC_TESTS=ON` and build `testppc`.
+Run it from `build/bin` so it can find its CSV files.

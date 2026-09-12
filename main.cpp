@@ -65,9 +65,9 @@ static void sigabrt_handler(int signum) {
 }
 
 static string appDescription = string(
-    "\nDingusPPC - Alpha 1.04b (7/26/2026)          "
-    "\nWritten by divingkatae, maximumspatium,      "
-    "\njoevt, mihaip, kkaisershot, et. al.          "
+    "\nChungusPPC - Alpha 1.04b (7/26/2026)          "
+    "\nIndependent fork of DingusPPC.              "
+    "\nOriginal authors credited in CREDITS.md.    "
     "\n(c) 2018-2026 The DingusPPC Dev Team.        "
     "\nThis is a build intended for testing.        "
     "\nUse at your own discretion.                  "
@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
     loguru::Verbosity log_verbosity = loguru::Verbosity_INFO;
     bool              log_no_uptime = false;
     emu->add_flag("--log-to-stderr", log_to_stderr,
-        "Send internal logging to stderr (instead of dingusppc.log)");
+        "Send internal logging to stderr (instead of chungusppc.log)");
     emu->add_option("--log-verbosity", log_verbosity,
         "Adjust logging verbosity (default is 0 a.k.a. INFO)")
         ->check(CLI::Number);
@@ -223,7 +223,7 @@ int main(int argc, char** argv) {
     if (execution_mode == interpreter && !log_to_stderr) {
         loguru::g_stderr_verbosity = loguru::Verbosity_OFF;
         loguru::init(argc, argv);
-        loguru::add_file("dingusppc.log", loguru::Append, log_verbosity);
+        loguru::add_file("chungusppc.log", loguru::Append, log_verbosity);
     } else {
         loguru::g_stderr_verbosity = log_verbosity;
         loguru::init(argc, argv);

@@ -4,14 +4,14 @@
 Once a guest has networking, this is a far better way to work with it than
 typing at its screen. Point --enet_hostfwd at the guest's telnet port:
 
-    dingusppc ... --enet_backend=slirp --enet_hostfwd=tcp:2323:23
-    dppc-shell.py 'uname -a' 'ifconfig eth0'
+    chungusppc ... --enet_backend=slirp --enet_hostfwd=tcp:2323:23
+    chungusppc-shell.py 'uname -a' 'ifconfig eth0'
 
 Many hosts no longer ship a telnet client and Python dropped telnetlib, so this
 speaks just enough of the protocol itself: refuse every option the server
 offers, then drive the login and the shell as a plain byte stream.
 
-DPPC_USER, DPPC_PASS, DPPC_PORT and DPPC_TIMEOUT override the defaults below.
+CHUNGUSPPC_USER, CHUNGUSPPC_PASS, CHUNGUSPPC_PORT and CHUNGUSPPC_TIMEOUT override the defaults below.
 """
 
 import os
@@ -20,7 +20,7 @@ import sys
 import time
 
 IAC, DONT, DO, WONT, WILL, SB, SE = 255, 254, 253, 252, 251, 250, 240
-MARK = "__DPPC_DONE__"
+MARK = "__CHUNGUSPPC_DONE__"
 
 
 def strip_telnet(data, sock, carry):
@@ -57,11 +57,11 @@ def strip_telnet(data, sock, carry):
 
 
 def run(cmds, host="127.0.0.1", port=None, user=None, pw=None, timeout=None):
-    port = port if port is not None else int(os.environ.get("DPPC_PORT", "2323"))
-    user = user if user is not None else os.environ.get("DPPC_USER", "root")
-    pw = pw if pw is not None else os.environ.get("DPPC_PASS", "root")
+    port = port if port is not None else int(os.environ.get("CHUNGUSPPC_PORT", "2323"))
+    user = user if user is not None else os.environ.get("CHUNGUSPPC_USER", "root")
+    pw = pw if pw is not None else os.environ.get("CHUNGUSPPC_PASS", "root")
     timeout = timeout if timeout is not None else int(
-        os.environ.get("DPPC_TIMEOUT", "180"))
+        os.environ.get("CHUNGUSPPC_TIMEOUT", "180"))
     sock = socket.create_connection((host, port), timeout=15)
     sock.settimeout(1.0)
 
@@ -90,7 +90,7 @@ def run(cmds, host="127.0.0.1", port=None, user=None, pw=None, timeout=None):
             time.sleep(2)
             # Split the marker in the command so the shell's echo of the
             # command line can't be mistaken for the marker in the output.
-            script = "; ".join(cmds) + '; echo __DPPC""_DONE__' + "\n"
+            script = "; ".join(cmds) + '; echo __CHUNGUSPPC""_DONE__' + "\n"
             sock.sendall(script.encode())
             stage = "running"
         elif stage == "running" and MARK in out:

@@ -31,13 +31,15 @@ compile_commands.json
 *.tags
 
 # Ignore generated executables
-dingusppc
-dingusppc.exe
+chungusppc
+chungusppc.exe
 
 # Ignore files the emulator writes as it runs
-dingusppc-screen.bmp
-dingusppc-screen.png
-dingusppc-input.txt
+chungusppc-screen.bmp
+chungusppc-screen.png
+chungusppc-input.txt
+chungusppc.log
+chungussocket
 
 # Ignore system files
 .DS_Store

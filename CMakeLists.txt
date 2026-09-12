@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(dingusppc)
+project(chungusppc)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(PlatformGlob)
@@ -170,7 +170,7 @@ endif()
 file(GLOB TEST_SOURCES "${PROJECT_SOURCE_DIR}/cpu/ppc/test/*.cpp")
 
 if (APPLE)
-add_executable(dingusppc MACOSX_BUNDLE ${SOURCES} 
+add_executable(chungusppc MACOSX_BUNDLE ${SOURCES}
     $<TARGET_OBJECTS:core>
     $<TARGET_OBJECTS:cpu_ppc>
     $<TARGET_OBJECTS:debugger>
@@ -179,7 +179,7 @@ add_executable(dingusppc MACOSX_BUNDLE ${SOURCES}
     $<TARGET_OBJECTS:utils>
     $<TARGET_OBJECTS:loguru>)
 else()
-add_executable(dingusppc ${SOURCES} $<TARGET_OBJECTS:core>
+add_executable(chungusppc ${SOURCES} $<TARGET_OBJECTS:core>
                                     $<TARGET_OBJECTS:cpu_ppc>
                                     $<TARGET_OBJECTS:debugger>
                                     $<TARGET_OBJECTS:devices>
@@ -191,26 +191,26 @@ endif()
 if (APPLE)
     # Identify if we are targeting iOS or macOS
     if (IOS)
-        set(BUNDLE_ID "com.dingusdev.dingusppc-ios")
+        set(BUNDLE_ID "org.chungusppc.ChungusPPC.ios")
         message(STATUS "Configuring for iOS Bundle")
     else()
-        set(BUNDLE_ID "com.dingusdev.dingusppc")
+        set(BUNDLE_ID "org.chungusppc.ChungusPPC")
         message(STATUS "Configuring for macOS Bundle")
     endif()
 
-    set_target_properties(dingusppc PROPERTIES
+    set_target_properties(chungusppc PROPERTIES
         MACOSX_BUNDLE_GUI_IDENTIFIER "${BUNDLE_ID}"
-        MACOSX_BUNDLE_BUNDLE_NAME "DingusPPC"
+        MACOSX_BUNDLE_BUNDLE_NAME "ChungusPPC"
         MACOSX_BUNDLE_BUNDLE_VERSION "alpha 1.0.4b"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "a1.0.4b"
-        MACOSX_BUNDLE_EXECUTABLE_NAME "DingusPPC"
+        MACOSX_BUNDLE_EXECUTABLE_NAME "chungusppc"
         # Placeholder for the icon file:
         # MACOSX_BUNDLE_ICON_FILE "icon.icns"
     )
 
     if (NOT IOS)
-        set_target_properties(dingusppc PROPERTIES
-            MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/cmake/DingusPPCInfo.plist.in"
+        set_target_properties(chungusppc PROPERTIES
+            MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/cmake/ChungusPPCInfo.plist.in"
             XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${BUNDLE_ID}"
         )
     endif()
@@ -220,7 +220,7 @@ if (APPLE)
     find_library(COREAUDIO_LIBRARY CoreAudio)
     find_library(AUDIOTOOLBOX_LIBRARY AudioToolbox)
     
-    target_link_libraries(dingusppc PRIVATE 
+    target_link_libraries(chungusppc PRIVATE
         ${COCOA_LIBRARY} 
         ${IOKIT_LIBRARY} 
         ${COREAUDIO_LIBRARY} 
@@ -228,15 +228,15 @@ if (APPLE)
     )
 
     if (IOS)
-        target_link_libraries(dingusppc PRIVATE "-framework Foundation" "-framework UIKit")
+        target_link_libraries(chungusppc PRIVATE "-framework Foundation" "-framework UIKit")
     endif()
 endif()
 
 if (WIN32)
-    target_link_libraries(dingusppc PRIVATE SDL2::SDL2 cubeb)
-    target_compile_definitions(dingusppc PRIVATE SDL_MAIN_HANDLED)
+    target_link_libraries(chungusppc PRIVATE SDL2::SDL2 cubeb)
+    target_compile_definitions(chungusppc PRIVATE SDL_MAIN_HANDLED)
 elseif (EMSCRIPTEN)
-    target_link_libraries(dingusppc PRIVATE
+    target_link_libraries(chungusppc PRIVATE
                                     ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT}
                                     "-gsource-map"
                                     # 256 MB max for emulated Mac RAM, plus 32 MB of emulator overhead
@@ -246,22 +246,22 @@ elseif (EMSCRIPTEN)
                                     "-s EXPORT_NAME=emulator"
                                     "-s 'EXTRA_EXPORTED_RUNTIME_METHODS=[\"FS\"]'")
 else()
-    target_link_libraries(dingusppc PRIVATE SDL2::SDL2main SDL2::SDL2 cubeb
+    target_link_libraries(chungusppc PRIVATE SDL2::SDL2main SDL2::SDL2 cubeb
                                     ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
 endif()
 
 if (APPLE)
     find_library(COCOA_LIBRARY Cocoa)
-    target_link_libraries(dingusppc PRIVATE ${COCOA_LIBRARY})
+    target_link_libraries(chungusppc PRIVATE ${COCOA_LIBRARY})
 endif()
 
 
 if (DPPC_68K_DEBUGGER)
-    target_link_libraries(dingusppc PRIVATE capstone)
+    target_link_libraries(chungusppc PRIVATE capstone)
 endif()
 
 if (DPPC_HAVE_SLIRP)
-    target_link_libraries(dingusppc PRIVATE ${SLIRP_LINK_LIBRARIES})
+    target_link_libraries(chungusppc PRIVATE ${SLIRP_LINK_LIBRARIES})
 endif()
 
 if (DPPC_BUILD_DEVICE_TESTS)
@@ -274,7 +274,7 @@ if (DPPC_BUILD_DEVICE_TESTS)
         $<TARGET_OBJECTS:machines>
         $<TARGET_OBJECTS:utils>
         $<TARGET_OBJECTS:loguru>)
-    target_link_libraries(testmesh PRIVATE $<TARGET_PROPERTY:dingusppc,LINK_LIBRARIES>)
+    target_link_libraries(testmesh PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
     add_test(NAME mesh COMMAND testmesh)
     add_executable(testamic tests/amic.cpp tests/headless_display.cpp
         $<TARGET_OBJECTS:core>
@@ -284,7 +284,7 @@ if (DPPC_BUILD_DEVICE_TESTS)
         $<TARGET_OBJECTS:machines>
         $<TARGET_OBJECTS:utils>
         $<TARGET_OBJECTS:loguru>)
-    target_link_libraries(testamic PRIVATE $<TARGET_PROPERTY:dingusppc,LINK_LIBRARIES>)
+    target_link_libraries(testamic PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
     add_test(NAME amic COMMAND testamic)
     add_executable(testcputiming tests/cputiming.cpp tests/headless_display.cpp
         $<TARGET_OBJECTS:core>
@@ -294,7 +294,7 @@ if (DPPC_BUILD_DEVICE_TESTS)
         $<TARGET_OBJECTS:machines>
         $<TARGET_OBJECTS:utils>
         $<TARGET_OBJECTS:loguru>)
-    target_link_libraries(testcputiming PRIVATE $<TARGET_PROPERTY:dingusppc,LINK_LIBRARIES>)
+    target_link_libraries(testcputiming PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
     add_test(NAME cputiming COMMAND testcputiming)
     add_executable(testmachinesettings tests/machinesettings.cpp
         $<TARGET_OBJECTS:core>
@@ -304,7 +304,7 @@ if (DPPC_BUILD_DEVICE_TESTS)
         $<TARGET_OBJECTS:machines>
         $<TARGET_OBJECTS:utils>
         $<TARGET_OBJECTS:loguru>)
-    target_link_libraries(testmachinesettings PRIVATE $<TARGET_PROPERTY:dingusppc,LINK_LIBRARIES>)
+    target_link_libraries(testmachinesettings PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
     add_test(NAME machinesettings COMMAND testmachinesettings)
     add_executable(testdirectcolor tests/directcolor.cpp tests/headless_display.cpp
         $<TARGET_OBJECTS:core>
@@ -314,7 +314,7 @@ if (DPPC_BUILD_DEVICE_TESTS)
         $<TARGET_OBJECTS:machines>
         $<TARGET_OBJECTS:utils>
         $<TARGET_OBJECTS:loguru>)
-    target_link_libraries(testdirectcolor PRIVATE $<TARGET_PROPERTY:dingusppc,LINK_LIBRARIES>)
+    target_link_libraries(testdirectcolor PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
     add_test(NAME directcolor COMMAND testdirectcolor)
     add_executable(testmach64gx tests/mach64gx.cpp tests/headless_display.cpp
         $<TARGET_OBJECTS:core>
@@ -324,7 +324,7 @@ if (DPPC_BUILD_DEVICE_TESTS)
         $<TARGET_OBJECTS:machines>
         $<TARGET_OBJECTS:utils>
         $<TARGET_OBJECTS:loguru>)
-    target_link_libraries(testmach64gx PRIVATE $<TARGET_PROPERTY:dingusppc,LINK_LIBRARIES>)
+    target_link_libraries(testmach64gx PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
     add_test(NAME mach64gx COMMAND testmach64gx)
     add_executable(testtimers tests/timers.cpp core/timermanager.cpp
         $<TARGET_OBJECTS:loguru>)
@@ -389,4 +389,4 @@ if (DPPC_BUILD_PPC_TESTS)
         "$<TARGET_FILE_DIR:$<TARGET_PROPERTY:NAME>>")
 endif()
 
-install (TARGETS dingusppc DESTINATION ${PROJECT_SOURCE_DIR}/build)
+install (TARGETS chungusppc DESTINATION ${PROJECT_SOURCE_DIR}/build)

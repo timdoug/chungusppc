@@ -81,7 +81,7 @@ void EventManager::set_keyboard_locale(uint32_t keyboard_id) {
 // scales small ones down sharply, so a 32 pixel step tracks roughly 1:1 while
 // an 8 pixel step covers barely half the distance. Take a screenshot and
 // correct rather than trusting the first move to land.
-#define INPUT_SCRIPT_PATH "dingusppc-input.txt"
+#define INPUT_SCRIPT_PATH "chungusppc-input.txt"
 
 // The largest delta an ADB report can carry, since it holds a signed 7 bit
 // value per axis and quietly drops the rest. Only used to drive the pointer

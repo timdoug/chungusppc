@@ -4,13 +4,13 @@ General
 * Test your contributions to assure they do not break existing functionality.
 * Commits to the repo should be done by portions; that is, by individual functionalities of the program.
 * Don't use any disrespectful language.
-* Do not use artificial intelligence to make contributions. This is due to authorship issues and licensing issues regarding AI usage.
+* AI-assisted and AI-generated contributions are welcome in ChungusPPC and follow the same review and testing requirements as other contributions.
 
 Code
 =======
 
 * Make sure the code can compile for all target systems - Windows, Linux, and macOS/Mac OS X.
-* All code must be compatible with at least C++11.
+* All code must be compatible with C++20.
 * Minimize the amount of redundant code.
 * Avoid using absolute paths for the headers.
 * Code should maintain vertical alignment for better readability, for example:

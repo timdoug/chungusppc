@@ -36,7 +36,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 using namespace std;
 
 /** the signature for NVRAM backing file identification. */
-static char NVRAM_FILE_ID[] = "DINGUSPPCNVRAM";
+static char NVRAM_FILE_ID[] = "CHUNGUSPPCNVRAM";
 
 NVram::NVram(std::string file_name, uint32_t ram_size)
 {
