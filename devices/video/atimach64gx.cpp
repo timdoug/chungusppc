@@ -32,6 +32,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <devices/video/rgb514defs.h>
 #include <loguru.hpp>
 
+#include <algorithm>
 #include <string>
 
 namespace loguru {
@@ -178,8 +179,9 @@ AtiMach64Gx::AtiMach64Gx()
     // set up RAMDAC identification
     this->regs[ATI_CONFIG_STAT0] = 1 << 9;
 
-    // stuff default values into chip registers
-    // this->regs[ATI_CONFIG_CHIP_ID] = (asic_id << ATI_CFG_CHIP_MAJOR) | (dev_id << ATI_CFG_CHIP_TYPE);
+    // GX uses the original five-bit character encoding for its chip type,
+    // rather than the ASCII PCI device ID (0x4758).
+    this->regs[ATI_CONFIG_CHIP_ID] = ((this->class_rev & 0xFF) << 24) | 0x00D7;
 
     // set the FIFO
     insert_bits<uint32_t>(this->regs[ATI_GUI_STAT], 32, ATI_FIFO_CNT, ATI_FIFO_CNT_size);
@@ -384,7 +386,7 @@ uint32_t AtiMach64Gx::read_reg(uint32_t reg_offset, uint32_t size)
     case ATI_DAC_REGS:
         if (size == 1) { // only byte accesses are allowed for DAC registers
             int dac_reg_addr = ((this->regs[ATI_DAC_CNTL] & 1) << 2) | offset;
-            insert_bits<uint64_t>(result, rgb514_read_reg(dac_reg_addr), 0, 8);
+            insert_bits<uint64_t>(result, rgb514_read_reg(dac_reg_addr), offset * 8, 8);
         }
         break;
     }
@@ -431,6 +433,10 @@ uint32_t AtiMach64Gx::read_reg(uint32_t reg_offset, uint32_t size)
 void AtiMach64Gx::write_reg(uint32_t reg_offset, uint32_t value, uint32_t size)
 {
     uint32_t reg_num = reg_offset >> 2;
+    if (reg_num >= ATI_HOST_DATA0 && reg_num <= ATI_HOST_DATA15) {
+        this->write_host_data(value, size);
+        return;
+    }
     uint32_t offset = reg_offset & 3;
     uint32_t old_value = this->regs[reg_num];
     uint32_t new_value;
@@ -630,6 +636,61 @@ void AtiMach64Gx::write_reg(uint32_t reg_offset, uint32_t value, uint32_t size)
                                   ATI_DAC_GIO_STATE_size);
         }
         break;
+    case ATI_DST_Y_X:
+    case ATI_DST_Y_X_ALIAS1:
+        new_value = value;
+        this->regs[ATI_DST_Y] = extract_bits<uint32_t>(value, 0, ATI_DST_Y_size);
+        this->regs[ATI_DST_X] = extract_bits<uint32_t>(value, 16, ATI_DST_X_size);
+        break;
+    case ATI_DST_X_Y:
+        new_value = value;
+        this->regs[ATI_DST_X] = extract_bits<uint32_t>(value, 0, ATI_DST_X_size);
+        this->regs[ATI_DST_Y] = extract_bits<uint32_t>(value, 16, ATI_DST_Y_size);
+        break;
+    case ATI_SRC_Y_X:
+        new_value = value;
+        this->regs[ATI_SRC_Y] = extract_bits<uint32_t>(value, 0, ATI_SRC_Y_size);
+        this->regs[ATI_SRC_X] = extract_bits<uint32_t>(value, 16, ATI_SRC_X_size);
+        break;
+    case ATI_SRC_HEIGHT1_WIDTH1:
+        new_value = value;
+        this->regs[ATI_SRC_HEIGHT1] = extract_bits<uint32_t>(value, 0, ATI_SRC_HEIGHT1_size);
+        this->regs[ATI_SRC_WIDTH1]  = extract_bits<uint32_t>(value, 16, ATI_SRC_WIDTH1_size);
+        break;
+    case ATI_SRC_Y_X_START:
+        new_value = value;
+        this->regs[ATI_SRC_Y_START] = extract_bits<uint32_t>(value, 0, ATI_SRC_Y_START_size);
+        this->regs[ATI_SRC_X_START] = extract_bits<uint32_t>(value, 16, ATI_SRC_X_START_size);
+        break;
+    case ATI_SRC_HEIGHT2_WIDTH2:
+        new_value = value;
+        this->regs[ATI_SRC_HEIGHT2] = extract_bits<uint32_t>(value, 0, ATI_SRC_HEIGHT2_size);
+        this->regs[ATI_SRC_WIDTH2]  = extract_bits<uint32_t>(value, 16, ATI_SRC_WIDTH2_size);
+        break;
+    case ATI_SC_LEFT_RIGHT:
+        new_value = value;
+        this->regs[ATI_SC_LEFT]  = extract_bits<uint32_t>(value, 0, ATI_SC_LEFT_size);
+        this->regs[ATI_SC_RIGHT] = extract_bits<uint32_t>(value, 16, ATI_SC_RIGHT_size);
+        break;
+    case ATI_SC_TOP_BOTTOM:
+        new_value                 = value;
+        this->regs[ATI_SC_TOP]    = extract_bits<uint32_t>(value, 0, ATI_SC_TOP_size);
+        this->regs[ATI_SC_BOTTOM] = extract_bits<uint32_t>(value, 16, ATI_SC_BOTTOM_size);
+        break;
+    case ATI_GUI_TRAJ_CNTL:
+        new_value = value;
+        insert_bits<uint32_t>(this->regs[ATI_DST_CNTL], value, 0, 16);
+        insert_bits<uint32_t>(this->regs[ATI_SRC_CNTL], value >> 16, 0, 8);
+        insert_bits<uint32_t>(this->regs[ATI_PAT_CNTL], value >> 24, 0, 3);
+        insert_bits<uint32_t>(this->regs[ATI_HOST_CNTL], value >> 28, 0, 2);
+        break;
+    case ATI_DST_WIDTH:
+    case ATI_DST_HEIGHT_WIDTH:
+    case ATI_DST_X_WIDTH:
+    case ATI_DST_WIDTH_HEIGHT:
+        this->begin_drawing(reg_num, value);
+        return;
+    case ATI_CONFIG_CHIP_ID:
     case ATI_CONFIG_STAT0:
         new_value = old_value; // prevent writes to this read-only register
         break;
@@ -644,7 +705,21 @@ void AtiMach64Gx::write_reg(uint32_t reg_offset, uint32_t value, uint32_t size)
 uint32_t AtiMach64Gx::read(uint32_t rgn_start, uint32_t offset, int size)
 {
     if (rgn_start == this->aperture_base[0]) {
-        if (offset < this->vram_size) {
+        if (offset >= BE_FB_OFFSET && offset < BE_FB_OFFSET + this->vram_size) {
+            // The Macintosh card straps on the second, big-endian aperture.
+            // Its swap width follows MEM_PIX_WIDTH, independently of the DAC.
+            unsigned pixel_width = (this->regs[ATI_MEM_CNTL] >> 24) & 7;
+            unsigned swap = pixel_width == 3 || pixel_width == 4 ? 1 :
+                            pixel_width == 6 ? 3 : 0;
+            offset -= BE_FB_OFFSET;
+            if (uint64_t(offset) + size > this->vram_size)
+                return 0;
+            uint32_t value = 0;
+            for (int i = 0; i < size; ++i)
+                value = (value << 8) | this->vram_ptr[(offset + i) ^ swap];
+            return value;
+        }
+        if (uint64_t(offset) + size <= this->vram_size) {
             return read_mem(&this->vram_ptr[offset], size);
         }
         if (offset >= this->mm_regs_offset && offset < this->mm_regs_offset + 0x400) {
@@ -669,7 +744,19 @@ uint32_t AtiMach64Gx::read(uint32_t rgn_start, uint32_t offset, int size)
 void AtiMach64Gx::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
 {
     if (rgn_start == this->aperture_base[0]) {
-        if (offset < this->vram_size) {
+        if (offset >= BE_FB_OFFSET && offset < BE_FB_OFFSET + this->vram_size) {
+            unsigned pixel_width = (this->regs[ATI_MEM_CNTL] >> 24) & 7;
+            unsigned swap = pixel_width == 3 || pixel_width == 4 ? 1 :
+                            pixel_width == 6 ? 3 : 0;
+            offset -= BE_FB_OFFSET;
+            if (uint64_t(offset) + size > this->vram_size)
+                return;
+            for (int i = 0; i < size; ++i)
+                this->vram_ptr[(offset + i) ^ swap] = value >> ((size - i - 1) * 8);
+            draw_fb = true;
+            return;
+        }
+        if (uint64_t(offset) + size <= this->vram_size) {
             draw_fb = true;
             return write_mem(&this->vram_ptr[offset], value, size);
         }
@@ -826,7 +913,7 @@ void AtiMach64Gx::crtc_update()
     case 4:
         this->convert_fb_cb = [this](uint8_t *dst_buf, int dst_pitch) {
             draw_fb = false;
-            this->convert_frame_15bpp<BE>(dst_buf, dst_pitch);
+            this->convert_frame_15bpp<LE>(dst_buf, dst_pitch);
         };
         break;
     case 5:
@@ -838,7 +925,7 @@ void AtiMach64Gx::crtc_update()
     case 6:
         this->convert_fb_cb = [this](uint8_t *dst_buf, int dst_pitch) {
             draw_fb = false;
-            this->convert_frame_32bpp<BE>(dst_buf, dst_pitch);
+            this->convert_frame_32bpp<LE>(dst_buf, dst_pitch);
         };
         break;
     default:
@@ -934,6 +1021,237 @@ void AtiMach64Gx::update_interrupt()
         LOG_F(ATIINTERRUPT, "%s: pci_irq_line_state:%d CRTC_INT_CNTL:%08x",
               this->name.c_str(), this->pci_irq_line_state, int_cntl);
         this->pci_interrupt(this->pci_irq_line_state);
+    }
+}
+
+void AtiMach64Gx::begin_drawing(uint32_t initiator, uint32_t value) {
+    switch(initiator) {
+    case ATI_DST_WIDTH: {
+        uint32_t width = extract_bits<uint32_t>(value, ATI_DST_WIDTH_pos, ATI_DST_WIDTH_size);
+        this->regs[ATI_DST_WIDTH] = width;
+        if (!bit_set(value, DST_WIDTH_FILL_DIS)) {
+            this->draw_rect(
+                width,
+                extract_bits<uint32_t>(
+                    this->regs[ATI_DST_HEIGHT], ATI_DST_HEIGHT_pos, ATI_DST_HEIGHT_size));
+        }
+        break;
+    }
+    case ATI_DST_HEIGHT_WIDTH: {
+        uint32_t width                   = extract_bits<uint32_t>(value, 16, ATI_DST_WIDTH_size);
+        uint32_t height                  = extract_bits<uint32_t>(value, 0, ATI_DST_HEIGHT_size);
+        this->regs[ATI_DST_HEIGHT_WIDTH] = value;
+        this->regs[ATI_DST_WIDTH]        = width;
+        this->regs[ATI_DST_HEIGHT]       = height;
+        this->draw_rect(width, height);
+        break;
+    }
+    case ATI_DST_X_WIDTH: {
+        uint32_t width              = extract_bits<uint32_t>(value, 16, ATI_DST_WIDTH_size);
+        this->regs[ATI_DST_X_WIDTH] = value;
+        this->regs[ATI_DST_X]       = extract_bits<uint32_t>(value, 0, ATI_DST_X_size);
+        this->regs[ATI_DST_WIDTH]   = width;
+        this->draw_rect(
+            width,
+            extract_bits<uint32_t>(
+                this->regs[ATI_DST_HEIGHT], ATI_DST_HEIGHT_pos, ATI_DST_HEIGHT_size));
+        break;
+    }
+    case ATI_DST_WIDTH_HEIGHT: {
+        uint32_t width                   = extract_bits<uint32_t>(value, 0, ATI_DST_WIDTH_size);
+        uint32_t height                  = extract_bits<uint32_t>(value, 16, ATI_DST_HEIGHT_size);
+        this->regs[ATI_DST_WIDTH_HEIGHT] = value;
+        this->regs[ATI_DST_WIDTH]        = width;
+        this->regs[ATI_DST_HEIGHT]       = height;
+        this->draw_rect(width, height);
+        break;
+    }
+    default:
+        LOG_F(WARNING, "%s: unimplemented engine operation, initiator=0x%X", this->name.c_str(),
+              initiator);
+    }
+}
+
+static int gx_signed(uint32_t value, unsigned width) {
+    return int32_t(value << (32 - width)) >> (32 - width);
+}
+
+static uint32_t gx_mix(unsigned mix, uint32_t src, uint32_t dst) {
+    switch (mix) {
+    case 0: return ~dst;
+    case 1: return 0;
+    case 2: return ~0U;
+    case 3: return dst;
+    case 4: return ~src;
+    case 5: return dst ^ src;
+    case 6: return ~(dst ^ src);
+    case 7: return src;
+    case 8: return ~(dst & src);
+    case 9: return dst | ~src;
+    case 10: return ~dst | src;
+    case 11: return dst | src;
+    case 12: return dst & src;
+    case 13: return ~dst & src;
+    case 14: return dst & ~src;
+    case 15: return ~(dst | src);
+    default: return dst;
+    }
+}
+
+void AtiMach64Gx::draw_rect(uint32_t width, uint32_t height) {
+    host_active = false;
+    unsigned format = regs[ATI_DP_PIX_WIDTH] & 7;
+    unsigned bytes = format == 2 ? 1 : format == 3 || format == 4 ? 2 :
+                     format == 6 ? 4 : 0;
+    unsigned mono = (regs[ATI_DP_SRC] >> 16) & 3;
+    unsigned foreground = (regs[ATI_DP_SRC] >> 8) & 7;
+    unsigned background = regs[ATI_DP_SRC] & 7;
+    unsigned source_mode = regs[ATI_SRC_CNTL] & 7;
+    unsigned host_format = (regs[ATI_DP_PIX_WIDTH] >> 16) & 7;
+    bool mono_host = mono == 2 && foreground <= 1 && background <= 1 && host_format == 0;
+    bool color_host = mono == 0 && foreground == 2 && format == 2 && host_format == 2;
+    if (bytes && (mono_host || color_host) && !regs[ATI_CLR_CMP_CNTL] &&
+        ((regs[ATI_DP_MIX] >> 16) & 31) <= 15 &&
+        (!mono_host || (regs[ATI_DP_MIX] & 31) <= 15)) {
+        host_width = width;
+        host_height = height;
+        host_col = host_row = 0;
+        host_active = width && height;
+        host_mono = mono_host;
+        return;
+    }
+    if (!bytes || mono > 1 || foreground == 2 || foreground > 3 ||
+        (mono && (background == 2 || background > 3)) ||
+        regs[ATI_CLR_CMP_CNTL] || source_mode > 3 || source_mode == 2 ||
+        ((regs[ATI_DP_MIX] >> 16) & 31) > 15 ||
+        (mono && (regs[ATI_DP_MIX] & 31) > 15)) {
+        LOG_F(WARNING, "%s: unsupported GX rectangle: SRC=%08X MIX=%08X PIX=%08X "
+              "SRC_CNTL=%08X CMP=%08X", name.c_str(), regs[ATI_DP_SRC], regs[ATI_DP_MIX],
+              regs[ATI_DP_PIX_WIDTH], regs[ATI_SRC_CNTL], regs[ATI_CLR_CMP_CNTL]);
+        return;
+    }
+    int dx = gx_signed(regs[ATI_DST_X], 14), dy = gx_signed(regs[ATI_DST_Y], 15);
+    int xi = bit_set(regs[ATI_DST_CNTL], ATI_DST_X_DIR) ? 1 : -1;
+    int yi = bit_set(regs[ATI_DST_CNTL], ATI_DST_Y_DIR) ? 1 : -1;
+    int left = gx_signed(regs[ATI_SC_LEFT], 14), right = gx_signed(regs[ATI_SC_RIGHT], 14);
+    int top = gx_signed(regs[ATI_SC_TOP], 15), bottom = gx_signed(regs[ATI_SC_BOTTOM], 15);
+    int xfirst = std::max(0, xi > 0 ? left - dx : dx - right);
+    int xlast = std::min(int(width) - 1, xi > 0 ? right - dx : dx - left);
+    int yfirst = std::max(0, yi > 0 ? top - dy : dy - bottom);
+    int ylast = std::min(int(height) - 1, yi > 0 ? bottom - dy : dy - top);
+    int sx0 = gx_signed(regs[ATI_SRC_X], 14), sy0 = gx_signed(regs[ATI_SRC_Y], 15);
+    int sw1 = regs[ATI_SRC_WIDTH1] & 0x3FFF, sh1 = regs[ATI_SRC_HEIGHT1] & 0x7FFF;
+    int sw2 = regs[ATI_SRC_WIDTH2] & 0x3FFF, sh2 = regs[ATI_SRC_HEIGHT2] & 0x7FFF;
+    bool blit = foreground == 3 || (mono && background == 3);
+    if (blit && (((regs[ATI_DP_PIX_WIDTH] >> 8) & 7) != format ||
+        (source_mode && (!sw1 || !sh1)) || (source_mode == 3 && (!sw2 || !sh2))))
+        return;
+    auto address = [&](unsigned reg, int x, int y) -> int64_t {
+        return int64_t(regs[reg] & 0xFFFFF) * 8 +
+               (int64_t(y) * (regs[reg] >> 22) * 8 + x) * bytes;
+    };
+    auto valid = [&](int64_t offset) { return offset >= 0 && offset + bytes <= vram_size; };
+    auto pixel = [&](int64_t offset) {
+        uint32_t value = 0;
+        for (unsigned b = 0; b < bytes; ++b)
+            value |= uint32_t(vram_ptr[offset + b]) << (b * 8);
+        return value;
+    };
+    for (int y = yfirst; y <= ylast; ++y) {
+        for (int x = xfirst; x <= xlast; ++x) {
+            int px = dx + x * xi, py = dy + y * yi;
+            int64_t dst = address(ATI_DST_OFF_PITCH, px, py);
+            if (!valid(dst)) continue;
+            bool bit = true;
+            if (mono == 1) {
+                unsigned pos = (unsigned(py) & 7) * 8 + (unsigned(px) & 7);
+                if (!bit_set(regs[ATI_DP_PIX_WIDTH], ATI_DP_BYTE_PIX_ORDER))
+                    pos ^= 7; // MSB first within each pattern byte
+                bit = (regs[pos < 32 ? ATI_PAT_REG0 : ATI_PAT_REG1] >> (pos & 31)) & 1;
+            }
+            unsigned source = bit ? foreground : background;
+            uint32_t color = regs[source == 0 ? ATI_DP_BKGD_CLR : ATI_DP_FRGD_CLR];
+            if (source == 3) {
+                int sx = sx0 + x * xi, sy = sy0 + y * yi;
+                if (source_mode == 1) {
+                    sx = sx0 + (x % sw1) * xi;
+                    sy = sy0 + (y % sh1) * yi;
+                } else if (source_mode == 3) {
+                    if (y >= sh1)
+                        sy = gx_signed(regs[ATI_SRC_Y_START], 15) + ((y - sh1) % sh2) * yi;
+                    if (y > 0)
+                        sx = gx_signed(regs[ATI_SRC_X_START], 14) + (x % sw2) * xi;
+                    else if (x >= sw1)
+                        sx = gx_signed(regs[ATI_SRC_X_START], 14) + ((x - sw1) % sw2) * xi;
+                }
+                int64_t src = address(ATI_SRC_OFF_PITCH, sx, sy);
+                if (!valid(src)) continue;
+                color = pixel(src);
+            }
+            uint32_t old = pixel(dst);
+            unsigned mix = (regs[ATI_DP_MIX] >> (bit ? 16 : 0)) & 31;
+            uint32_t mask = regs[ATI_DP_WRITE_MSK];
+            color = (old & ~mask) | (gx_mix(mix, color, old) & mask);
+            for (unsigned b = 0; b < bytes; ++b)
+                vram_ptr[dst + b] = color >> (b * 8);
+            draw_fb = true;
+        }
+    }
+    finish_rect(width, height);
+}
+
+void AtiMach64Gx::finish_rect(uint32_t width, uint32_t height) {
+    int xi = bit_set(regs[ATI_DST_CNTL], ATI_DST_X_DIR) ? 1 : -1;
+    int yi = bit_set(regs[ATI_DST_CNTL], ATI_DST_Y_DIR) ? 1 : -1;
+    if (bit_set(regs[ATI_DST_CNTL], ATI_DST_X_TILE))
+        regs[ATI_DST_X] = (gx_signed(regs[ATI_DST_X], 14) + int(width) * xi) & 0x3FFF;
+    if (bit_set(regs[ATI_DST_CNTL], ATI_DST_Y_TILE))
+        regs[ATI_DST_Y] = (gx_signed(regs[ATI_DST_Y], 15) + int(height) * yi) & 0x7FFF;
+}
+
+void AtiMach64Gx::write_host_data(uint32_t value, uint32_t size) {
+    if (!host_active) return;
+    unsigned format = regs[ATI_DP_PIX_WIDTH] & 7;
+    unsigned bytes = format == 2 ? 1 : format == 3 || format == 4 ? 2 :
+                     format == 6 ? 4 : 0;
+    if (!bytes) { host_active = false; return; }
+    int xi = bit_set(regs[ATI_DST_CNTL], ATI_DST_X_DIR) ? 1 : -1;
+    int yi = bit_set(regs[ATI_DST_CNTL], ATI_DST_Y_DIR) ? 1 : -1;
+    int dx = gx_signed(regs[ATI_DST_X], 14), dy = gx_signed(regs[ATI_DST_Y], 15);
+    int left = gx_signed(regs[ATI_SC_LEFT], 14), right = gx_signed(regs[ATI_SC_RIGHT], 14);
+    int top = gx_signed(regs[ATI_SC_TOP], 15), bottom = gx_signed(regs[ATI_SC_BOTTOM], 15);
+    bool lsb_first = bit_set(regs[ATI_DP_PIX_WIDTH], ATI_DP_BYTE_PIX_ORDER);
+    for (unsigned byte = 0; byte < size && host_active; ++byte) {
+        unsigned shift = (xi > 0 ? byte : size - byte - 1) * 8;
+        uint8_t data = value >> shift;
+        for (unsigned b = 0; b < (host_mono ? 8U : 1U) && host_active; ++b) {
+            bool bit = !host_mono || ((data >> (lsb_first ? b : 7 - b)) & 1);
+            int x = dx + int(host_col) * xi, y = dy + int(host_row) * yi;
+            int64_t offset = int64_t(regs[ATI_DST_OFF_PITCH] & 0xFFFFF) * 8 +
+                (int64_t(y) * (regs[ATI_DST_OFF_PITCH] >> 22) * 8 + x) * bytes;
+            if (x >= left && x <= right && y >= top && y <= bottom &&
+                offset >= 0 && offset + bytes <= vram_size) {
+                unsigned source = (regs[ATI_DP_SRC] >> (bit ? 8 : 0)) & 7;
+                uint32_t color = host_mono ? regs[source ? ATI_DP_FRGD_CLR : ATI_DP_BKGD_CLR] : data;
+                unsigned mix = (regs[ATI_DP_MIX] >> (bit ? 16 : 0)) & 31;
+                uint32_t old = 0, mask = regs[ATI_DP_WRITE_MSK];
+                for (unsigned i = 0; i < bytes; ++i)
+                    old |= uint32_t(vram_ptr[offset + i]) << (i * 8);
+                color = (old & ~mask) | (gx_mix(mix, color, old) & mask);
+                for (unsigned i = 0; i < bytes; ++i)
+                    vram_ptr[offset + i] = color >> (i * 8);
+                draw_fb = true;
+            }
+            if (++host_col == host_width) {
+                host_col = 0;
+                if (++host_row == host_height) {
+                    host_active = false;
+                    finish_rect(host_width, host_height);
+                }
+                // HOST_BYTE_ALIGN starts each monochrome source row at a byte.
+                if (host_mono && (regs[ATI_HOST_CNTL] & 1)) break;
+            }
+        }
     }
 }
 
