@@ -6,6 +6,19 @@ Officially, it only supports up to 6 MB, but hacks can be done such that it uses
 
 Later Power Mac G3s would be bundled with the ATI Rage 128, which could support up to 32 MB of video memory.
 
+RGB555 and xRGB8888 scanout use the DAC lookup table separately for red, green,
+and blue. On integrated Mach64 chips, the five-bit RGB555 components address
+entries `component << 3`; xRGB8888 uses the component byte directly. Mac OS
+loads gamma ramps and MkLinux loads console colors. Treating the pixel fields
+as linear intensities makes MkLinux's 16-bit console gray. This matches the
+[Linux atyfb driver's palette programming](https://github.com/torvalds/linux/blob/master/drivers/video/fbdev/aty/atyfb_base.c)
+and the retained Mach source's `video_ati.c:ati_setcolor`.
+
+The `directcolor` CTest checks independent component lookup, the shifted RGB555
+indices, palette changes, and framebuffer row strides. Mac OS 7.6.1 still uses
+monochrome source and host drawing operations that this accelerator does not
+implement; affected text and icons can be incomplete.
+
 # Memory Map
 
 The ATI Rage can usually be located at IOBase (ex.: 0xF3000000 for Power Mac G3 Beige) + 0x9000. However, the video memory appears to be at 0x81000000 and is capped at 8 MB.

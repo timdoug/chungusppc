@@ -949,7 +949,7 @@ void ATIRage::crtc_update() {
     case ATI_PIX_FMT_RGB555:
         this->convert_fb_cb = [this](uint8_t *dst_buf, int dst_pitch) {
             draw_fb = false;
-            this->convert_frame_15bpp<BE>(dst_buf, dst_pitch);
+            this->convert_frame_directcolor<16>(dst_buf, dst_pitch, 3);
         };
         break;
     case ATI_PIX_FMT_RGB565:
@@ -967,7 +967,7 @@ void ATIRage::crtc_update() {
     case ATI_PIX_FMT_ARGB8888:
         this->convert_fb_cb = [this](uint8_t *dst_buf, int dst_pitch) {
             draw_fb = false;
-            this->convert_frame_32bpp<BE>(dst_buf, dst_pitch);
+            this->convert_frame_directcolor<32>(dst_buf, dst_pitch);
         };
         break;
     default:
