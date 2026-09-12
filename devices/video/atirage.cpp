@@ -59,6 +59,40 @@ static bool mach64_clip_axis(int coord, int increment, uint32_t length,
     return true;
 }
 
+// The sixteen Boolean mixes in the Mach64 register reference, DP_MIX.
+static uint32_t rage_mix(unsigned mix, uint32_t src, uint32_t dst) {
+    switch (mix) {
+    case 0: return ~dst;
+    case 1: return 0;
+    case 2: return ~0U;
+    case 3: return dst;
+    case 4: return ~src;
+    case 5: return dst ^ src;
+    case 6: return ~(dst ^ src);
+    case 7: return src;
+    case 8: return ~(dst & src);
+    case 9: return dst | ~src;
+    case 10: return ~dst | src;
+    case 11: return dst | src;
+    case 12: return dst & src;
+    case 13: return ~dst & src;
+    case 14: return dst & ~src;
+    case 15: return ~(dst | src);
+    default: return dst;
+    }
+}
+
+static unsigned rage_pixel_bytes(unsigned format) {
+    switch (format) {
+    case ATI_PIX_FMT_8BPP: return 1;
+    case ATI_PIX_FMT_RGB555:
+    case ATI_PIX_FMT_RGB565: return 2;
+    case ATI_PIX_FMT_RGB888: return 3;
+    case ATI_PIX_FMT_ARGB8888: return 4;
+    default: return 0;
+    }
+}
+
 /* Human readable Mach64 HW register names for easier debugging. */
 static const std::map<uint16_t, std::string> mach64_reg_names = {
     #define one_reg_name(x) {ATI_ ## x, #x}
@@ -1130,14 +1164,16 @@ void ATIRage::draw_rect(uint32_t width, uint32_t height) {
         return;
     }
 
-    if ((frgd_src == ATI_DP_COLOR_SRC_BKGD_CLR || frgd_src == ATI_DP_COLOR_SRC_FRGD_CLR) &&
-        mono_src == ATI_DP_MONO_SRC_ALWAYS_1) {
-        uint32_t color = frgd_src == ATI_DP_COLOR_SRC_BKGD_CLR ? this->regs[ATI_DP_BKGD_CLR]
-                                                               : this->regs[ATI_DP_FRGD_CLR];
-        this->fill_rect(width, height, color);
+    uint8_t bkgd_src = extract_bits<uint32_t>(
+        this->regs[ATI_DP_SRC], ATI_DP_BKGD_SRC, ATI_DP_BKGD_SRC_size);
+    if (frgd_src <= ATI_DP_COLOR_SRC_FRGD_CLR &&
+        (mono_src == ATI_DP_MONO_SRC_ALWAYS_1 ||
+         (mono_src == ATI_DP_MONO_SRC_PATTERN && bkgd_src <= ATI_DP_COLOR_SRC_FRGD_CLR))) {
+        this->fill_rect(width, height);
         this->finish_rect(width, height);
-    } else if (frgd_src == ATI_DP_COLOR_SRC_HOST &&
-               mono_src == ATI_DP_MONO_SRC_ALWAYS_1) {
+    } else if ((frgd_src == ATI_DP_COLOR_SRC_HOST && mono_src == ATI_DP_MONO_SRC_ALWAYS_1) ||
+               (mono_src == ATI_DP_MONO_SRC_HOST && frgd_src <= ATI_DP_COLOR_SRC_FRGD_CLR &&
+                bkgd_src <= ATI_DP_COLOR_SRC_FRGD_CLR)) {
         this->start_host_rect(width, height);
     } else if (frgd_src == ATI_DP_COLOR_SRC_BLIT &&
                mono_src == ATI_DP_MONO_SRC_ALWAYS_1) {
@@ -1167,199 +1203,134 @@ void ATIRage::finish_rect(uint32_t width, uint32_t height) {
     }
 }
 
-void ATIRage::fill_rect(uint32_t dst_width, uint32_t dst_height, uint32_t color) {
-    uint8_t frgd_mix = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_FRGD_MIX,
-                                              ATI_DP_FRGD_MIX_size);
-
-    if (frgd_mix != ATI_DP_MIX_SRC) {
-        LOG_F(WARNING, "%s: unimplemented rectangle fill op, DP_FRGD_MIX=0x%X",
-              this->name.c_str(), frgd_mix);
+// Rage's current framebuffer representation is big-endian for Macintosh
+// RGB555/xRGB8888 modes, and little-endian for RGB565. Keep accelerator writes
+// in the same representation as CPU accesses and scanout.
+void ATIRage::draw_pixel(int x, int y, uint32_t color, unsigned mix) {
+    unsigned format = extract_bits<uint32_t>(regs[ATI_DP_PIX_WIDTH],
+                                            ATI_DP_DST_PIX_WIDTH, ATI_DP_DST_PIX_WIDTH_size);
+    unsigned bytes = rage_pixel_bytes(format);
+    int left = mach64_extract_signed(regs[ATI_SC_LEFT], ATI_SC_LEFT_pos, ATI_SC_LEFT_size);
+    int right = mach64_extract_signed(regs[ATI_SC_RIGHT], ATI_SC_RIGHT_pos, ATI_SC_RIGHT_size);
+    int top = mach64_extract_signed(regs[ATI_SC_TOP], ATI_SC_TOP_pos, ATI_SC_TOP_size);
+    int bottom = mach64_extract_signed(regs[ATI_SC_BOTTOM], ATI_SC_BOTTOM_pos, ATI_SC_BOTTOM_size);
+    if (!bytes || x < left || x > right || y < top || y > bottom)
         return;
-    }
 
-    if (this->regs[ATI_CLR_CMP_CNTL]) {
-        LOG_F(WARNING, "%s: color comparator not implemented yet, CLR_CMP_CNTL=0x%X", this->name.c_str(),
-              this->regs[ATI_CLR_CMP_CNTL]);
+    int64_t pitch = extract_bits<uint32_t>(regs[ATI_DST_OFF_PITCH],
+                                          ATI_DST_PITCH, ATI_DST_PITCH_size) * 8;
+    int64_t offset = int64_t(extract_bits<uint32_t>(regs[ATI_DST_OFF_PITCH],
+                                                  ATI_DST_OFFSET, ATI_DST_OFFSET_size)) * 8 +
+                     (int64_t(y) * pitch + x) * bytes;
+    if (offset < 0 || offset + bytes > vram_size)
         return;
+
+    uint32_t old = 0, mask = regs[ATI_DP_WRITE_MSK];
+    for (unsigned b = 0; b < bytes; ++b) {
+        unsigned shift = (format == ATI_PIX_FMT_RGB565 ? b : bytes - b - 1) * 8;
+        old |= uint32_t(vram_ptr[offset + b]) << shift;
     }
-
-    // check pixel formats
-    uint8_t src_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_SRC_PIX_WIDTH,
-                                                 ATI_DP_SRC_PIX_WIDTH_size);
-    uint8_t dst_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_DST_PIX_WIDTH,
-                                                 ATI_DP_DST_PIX_WIDTH_size);
-
-    if (dst_pix_fmt != src_pix_fmt) {
-        LOG_F(WARNING, "%s: unsupported pixel format conversion, DP_SRC_PIX_WIDTH=0x%X, DP_DST_PIX_WIDTH=0x%X",
-              this->name.c_str(), src_pix_fmt, dst_pix_fmt);
-        return;
+    color = (old & ~mask) | (rage_mix(mix, color, old) & mask);
+    for (unsigned b = 0; b < bytes; ++b) {
+        unsigned shift = (format == ATI_PIX_FMT_RGB565 ? b : bytes - b - 1) * 8;
+        vram_ptr[offset + b] = color >> shift;
     }
-
-    int bytes_per_pixel;
-    switch (dst_pix_fmt) {
-        case ATI_PIX_FMT_8BPP:
-        bytes_per_pixel = 1;
-        break;
-    case ATI_PIX_FMT_RGB555:
-    case ATI_PIX_FMT_RGB565:
-        bytes_per_pixel = 2;
-        break;
-    case ATI_PIX_FMT_RGB888:
-        bytes_per_pixel = 3;
-        break;
-    case ATI_PIX_FMT_ARGB8888:
-        bytes_per_pixel = 4;
-        break;
-    default:
-        LOG_F(WARNING, "%s: unsupported rectangle fill pixel format, DP_DST_PIX_WIDTH=0x%X",
-              this->name.c_str(), dst_pix_fmt);
-        return;
-    }
-
-    // grab trajectory params
-    int dst_offs   = extract_bits<uint32_t>(this->regs[ATI_DST_OFF_PITCH], ATI_DST_OFFSET, ATI_DST_OFFSET_size);
-    int dst_pitch  = extract_bits<uint32_t>(this->regs[ATI_DST_OFF_PITCH], ATI_DST_PITCH, ATI_DST_PITCH_size);
-    int dst_x      = mach64_extract_signed(this->regs[ATI_DST_X], ATI_DST_X_pos, ATI_DST_X_size);
-    int dst_y      = mach64_extract_signed(this->regs[ATI_DST_Y], ATI_DST_Y_pos, ATI_DST_Y_size);
-
-    dst_offs  *= 8;
-    dst_pitch *= 8 * bytes_per_pixel;
-
-    int x_inc = bit_set(this->regs[ATI_DST_CNTL], ATI_DST_X_DIR) ? 1 : -1;
-    int y_inc = bit_set(this->regs[ATI_DST_CNTL], ATI_DST_Y_DIR) ? 1 : -1;
-
-    int sc_left = mach64_extract_signed(this->regs[ATI_SC_LEFT], ATI_SC_LEFT_pos, ATI_SC_LEFT_size);
-    int sc_right = mach64_extract_signed(
-        this->regs[ATI_SC_RIGHT], ATI_SC_RIGHT_pos, ATI_SC_RIGHT_size);
-    int sc_top    = mach64_extract_signed(this->regs[ATI_SC_TOP], ATI_SC_TOP_pos, ATI_SC_TOP_size);
-    int sc_bottom = mach64_extract_signed(
-        this->regs[ATI_SC_BOTTOM], ATI_SC_BOTTOM_pos, ATI_SC_BOTTOM_size);
-
-    int x_skip, y_skip;
-    if (!mach64_clip_axis(dst_x, x_inc, dst_width, sc_left, sc_right, x_skip, dst_width) ||
-        !mach64_clip_axis(dst_y, y_inc, dst_height, sc_top, sc_bottom, y_skip, dst_height)) {
-        return;
-    }
-    dst_x += x_skip * x_inc;
-    dst_y += y_skip * y_inc;
-
-    uint32_t pix = color & this->regs[ATI_DP_WRITE_MSK];
-
-    switch (dst_pix_fmt) {
-    case ATI_PIX_FMT_8BPP:
-        for (uint32_t y = 0; y < dst_height; y++) {
-            uint8_t* row = &this->vram_ptr[dst_offs + (dst_y + int(y) * y_inc) * dst_pitch];
-            for (int x = dst_x, width = dst_width; width-- > 0; x += x_inc) {
-                row[x] = uint8_t(pix);
-            }
-        }
-        break;
-    case ATI_PIX_FMT_RGB555:
-        pix = BYTESWAP_16(pix);
-        for (uint32_t y = 0; y < dst_height; y++) {
-            uint16_t* row = (uint16_t*)&this->vram_ptr[dst_offs + (dst_y + int(y) * y_inc) * dst_pitch];
-            for (int x = dst_x, width = dst_width; width-- > 0; x += x_inc) {
-                row[x] = pix;
-            }
-        }
-        break;
-    case ATI_PIX_FMT_RGB565:
-        pix &= 0xFFFF;
-        for (uint32_t y = 0; y < dst_height; y++) {
-            uint16_t* row = (uint16_t*)&this->vram_ptr[dst_offs + (dst_y + int(y) * y_inc) * dst_pitch];
-            for (int x = dst_x, width = dst_width; width-- > 0; x += x_inc) {
-                row[x] = pix;
-            }
-        }
-        break;
-    case ATI_PIX_FMT_RGB888:
-        for (uint32_t y = 0; y < dst_height; y++) {
-            uint8_t* row = &this->vram_ptr[dst_offs + (dst_y + int(y) * y_inc) * dst_pitch];
-            for (int x = dst_x, width = dst_width; width-- > 0; x += x_inc) {
-                uint8_t* dst_ptr = row + x * 3;
-                dst_ptr[0] = uint8_t(pix >> 16);
-                dst_ptr[1] = uint8_t(pix >> 8);
-                dst_ptr[2] = uint8_t(pix);
-            }
-        }
-        break;
-    case ATI_PIX_FMT_ARGB8888:
-        pix = BYTESWAP_32(pix);
-        for (uint32_t y = 0; y < dst_height; y++) {
-            uint32_t* row = (uint32_t*)&this->vram_ptr[dst_offs + (dst_y + int(y) * y_inc) * dst_pitch];
-            for (int x = dst_x, width = dst_width; width-- > 0; x += x_inc) {
-                row[x] = pix;
-            }
-        }
-        break;
-    }
-
-    this->draw_fb = true;
+    draw_fb = true;
 }
 
-void ATIRage::start_host_rect(uint32_t dst_width, uint32_t dst_height) {
-    uint8_t frgd_mix = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_FRGD_MIX,
-                                              ATI_DP_FRGD_MIX_size);
-    uint8_t host_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_HOST_PIX_WIDTH,
-                                                  ATI_DP_HOST_PIX_WIDTH_size);
-    uint8_t dst_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_DST_PIX_WIDTH,
-                                                 ATI_DP_DST_PIX_WIDTH_size);
-
-    if (frgd_mix != ATI_DP_MIX_SRC || host_pix_fmt != ATI_PIX_FMT_8BPP ||
-        dst_pix_fmt != ATI_PIX_FMT_8BPP || this->regs[ATI_CLR_CMP_CNTL]) {
-        LOG_F(WARNING, "%s: unsupported color host rectangle, DP_MIX=0x%08X, "
-              "DP_PIX_WIDTH=0x%08X, CLR_CMP_CNTL=0x%08X", this->name.c_str(),
-              this->regs[ATI_DP_MIX], this->regs[ATI_DP_PIX_WIDTH],
-              this->regs[ATI_CLR_CMP_CNTL]);
+void ATIRage::fill_rect(uint32_t width, uint32_t height) {
+    unsigned format = extract_bits<uint32_t>(regs[ATI_DP_PIX_WIDTH],
+                                            ATI_DP_DST_PIX_WIDTH, ATI_DP_DST_PIX_WIDTH_size);
+    bool pattern = extract_bits<uint32_t>(regs[ATI_DP_SRC], ATI_DP_MONO_SRC,
+                                         ATI_DP_MONO_SRC_size) == ATI_DP_MONO_SRC_PATTERN;
+    unsigned foreground_mix = (regs[ATI_DP_MIX] >> ATI_DP_FRGD_MIX) & 31;
+    unsigned background_mix = regs[ATI_DP_MIX] & 31;
+    if (!rage_pixel_bytes(format) || foreground_mix > 15 ||
+        (pattern && background_mix > 15) || regs[ATI_CLR_CMP_CNTL]) {
+        LOG_F(WARNING, "%s: unsupported rectangle fill, DP_PIX_WIDTH=0x%08X, "
+              "DP_MIX=0x%08X, CLR_CMP_CNTL=0x%08X", name.c_str(), regs[ATI_DP_PIX_WIDTH],
+              regs[ATI_DP_MIX], regs[ATI_CLR_CMP_CNTL]);
         return;
     }
+    int dx = mach64_extract_signed(regs[ATI_DST_X], ATI_DST_X_pos, ATI_DST_X_size);
+    int dy = mach64_extract_signed(regs[ATI_DST_Y], ATI_DST_Y_pos, ATI_DST_Y_size);
+    int xi = bit_set(regs[ATI_DST_CNTL], ATI_DST_X_DIR) ? 1 : -1;
+    int yi = bit_set(regs[ATI_DST_CNTL], ATI_DST_Y_DIR) ? 1 : -1;
+    int left = mach64_extract_signed(regs[ATI_SC_LEFT], ATI_SC_LEFT_pos, ATI_SC_LEFT_size);
+    int right = mach64_extract_signed(regs[ATI_SC_RIGHT], ATI_SC_RIGHT_pos, ATI_SC_RIGHT_size);
+    int top = mach64_extract_signed(regs[ATI_SC_TOP], ATI_SC_TOP_pos, ATI_SC_TOP_size);
+    int bottom = mach64_extract_signed(regs[ATI_SC_BOTTOM], ATI_SC_BOTTOM_pos, ATI_SC_BOTTOM_size);
+    int xskip, yskip;
+    if (!mach64_clip_axis(dx, xi, width, left, right, xskip, width) ||
+        !mach64_clip_axis(dy, yi, height, top, bottom, yskip, height))
+        return;
+    dx += xskip * xi;
+    dy += yskip * yi;
+    for (unsigned row = 0; row < height; ++row) {
+        for (unsigned col = 0; col < width; ++col) {
+            int x = dx + int(col) * xi, y = dy + int(row) * yi;
+            bool bit = true;
+            if (pattern) {
+                unsigned pos = (unsigned(y) & 7) * 8 + (unsigned(x) & 7);
+                if (!bit_set(regs[ATI_DP_PIX_WIDTH], ATI_DP_BYTE_PIX_ORDER))
+                    pos ^= 7;
+                bit = (regs[pos < 32 ? ATI_PAT_REG0 : ATI_PAT_REG1] >> (pos & 31)) & 1;
+            }
+            unsigned source = (regs[ATI_DP_SRC] >> (bit ? ATI_DP_FRGD_SRC : ATI_DP_BKGD_SRC)) & 7;
+            draw_pixel(x, y, regs[source ? ATI_DP_FRGD_CLR : ATI_DP_BKGD_CLR],
+                       bit ? foreground_mix : background_mix);
+        }
+    }
+}
 
-    this->host_dst_width   = dst_width;
-    this->host_dst_height  = dst_height;
-    this->host_dst_col     = 0;
-    this->host_dst_row     = 0;
-    this->host_data_active = true;
+void ATIRage::start_host_rect(uint32_t width, uint32_t height) {
+    unsigned host_format = extract_bits<uint32_t>(regs[ATI_DP_PIX_WIDTH],
+                                                 ATI_DP_HOST_PIX_WIDTH, ATI_DP_HOST_PIX_WIDTH_size);
+    unsigned format = extract_bits<uint32_t>(regs[ATI_DP_PIX_WIDTH],
+                                            ATI_DP_DST_PIX_WIDTH, ATI_DP_DST_PIX_WIDTH_size);
+    host_monochrome = extract_bits<uint32_t>(regs[ATI_DP_SRC], ATI_DP_MONO_SRC,
+                                            ATI_DP_MONO_SRC_size) == ATI_DP_MONO_SRC_HOST;
+    bool supported = host_monochrome ? host_format == 0 && rage_pixel_bytes(format) :
+                     host_format == ATI_PIX_FMT_8BPP && format == ATI_PIX_FMT_8BPP;
+    if (!supported || ((regs[ATI_DP_MIX] >> ATI_DP_FRGD_MIX) & 31) > 15 ||
+        (host_monochrome && (regs[ATI_DP_MIX] & 31) > 15) || regs[ATI_CLR_CMP_CNTL]) {
+        LOG_F(WARNING, "%s: unsupported host rectangle, DP_PIX_WIDTH=0x%08X, "
+              "DP_MIX=0x%08X, CLR_CMP_CNTL=0x%08X", name.c_str(), regs[ATI_DP_PIX_WIDTH],
+              regs[ATI_DP_MIX], regs[ATI_CLR_CMP_CNTL]);
+        return;
+    }
+    host_dst_width = width;
+    host_dst_height = height;
+    host_dst_col = host_dst_row = 0;
+    host_data_active = width && height;
 }
 
 void ATIRage::write_host_data(uint32_t value, uint32_t size) {
-    if (!this->host_data_active) {
+    if (!host_data_active)
         return;
-    }
-
-    int dst_offs = extract_bits<uint32_t>(
-                       this->regs[ATI_DST_OFF_PITCH], ATI_DST_OFFSET, ATI_DST_OFFSET_size) *
-        8;
-    int dst_pitch =
-        extract_bits<uint32_t>(this->regs[ATI_DST_OFF_PITCH], ATI_DST_PITCH, ATI_DST_PITCH_size) * 8;
-    int dst_x   = mach64_extract_signed(this->regs[ATI_DST_X], ATI_DST_X_pos, ATI_DST_X_size);
-    int dst_y   = mach64_extract_signed(this->regs[ATI_DST_Y], ATI_DST_Y_pos, ATI_DST_Y_size);
-    int sc_left = mach64_extract_signed(this->regs[ATI_SC_LEFT], ATI_SC_LEFT_pos, ATI_SC_LEFT_size);
-    int sc_right = mach64_extract_signed(
-        this->regs[ATI_SC_RIGHT], ATI_SC_RIGHT_pos, ATI_SC_RIGHT_size);
-    int sc_top    = mach64_extract_signed(this->regs[ATI_SC_TOP], ATI_SC_TOP_pos, ATI_SC_TOP_size);
-    int sc_bottom = mach64_extract_signed(
-        this->regs[ATI_SC_BOTTOM], ATI_SC_BOTTOM_pos, ATI_SC_BOTTOM_size);
-    int x_inc          = bit_set(this->regs[ATI_DST_CNTL], ATI_DST_X_DIR) ? 1 : -1;
-    int y_inc          = bit_set(this->regs[ATI_DST_CNTL], ATI_DST_Y_DIR) ? 1 : -1;
-    uint8_t write_mask = this->regs[ATI_DP_WRITE_MSK];
-
-    for (uint32_t byte = 0; byte < size && this->host_data_active; byte++) {
-        int shift     = x_inc > 0 ? int(byte) * 8 : int(size - byte - 1) * 8;
-        uint8_t pixel = value >> shift;
-        int x         = dst_x + int(this->host_dst_col) * x_inc;
-        int y         = dst_y + int(this->host_dst_row) * y_inc;
-
-        if (x >= sc_left && x <= sc_right && y >= sc_top && y <= sc_bottom) {
-            uint8_t* dst  = &this->vram_ptr[dst_offs + y * dst_pitch + x];
-            *dst          = (*dst & ~write_mask) | (pixel & write_mask);
-            this->draw_fb = true;
-        }
-
-        if (++this->host_dst_col >= this->host_dst_width) {
-            this->host_dst_col = 0;
-            if (++this->host_dst_row >= this->host_dst_height) {
-                this->host_data_active = false;
-                this->finish_rect(this->host_dst_width, this->host_dst_height);
+    int dx = mach64_extract_signed(regs[ATI_DST_X], ATI_DST_X_pos, ATI_DST_X_size);
+    int dy = mach64_extract_signed(regs[ATI_DST_Y], ATI_DST_Y_pos, ATI_DST_Y_size);
+    int xi = bit_set(regs[ATI_DST_CNTL], ATI_DST_X_DIR) ? 1 : -1;
+    int yi = bit_set(regs[ATI_DST_CNTL], ATI_DST_Y_DIR) ? 1 : -1;
+    bool lsb_first = bit_set(regs[ATI_DP_PIX_WIDTH], ATI_DP_BYTE_PIX_ORDER);
+    for (unsigned byte = 0; byte < size && host_data_active; ++byte) {
+        unsigned shift = (xi > 0 ? byte : size - byte - 1) * 8;
+        uint8_t data = value >> shift;
+        for (unsigned b = 0; b < (host_monochrome ? 8U : 1U) && host_data_active; ++b) {
+            bool bit = !host_monochrome || ((data >> (lsb_first ? b : 7 - b)) & 1);
+            unsigned source = (regs[ATI_DP_SRC] >> (bit ? ATI_DP_FRGD_SRC : ATI_DP_BKGD_SRC)) & 7;
+            uint32_t color = host_monochrome ? regs[source ? ATI_DP_FRGD_CLR : ATI_DP_BKGD_CLR] : data;
+            unsigned mix = (regs[ATI_DP_MIX] >> (bit ? ATI_DP_FRGD_MIX : ATI_DP_BKGD_MIX)) & 31;
+            draw_pixel(dx + int(host_dst_col) * xi, dy + int(host_dst_row) * yi, color, mix);
+            if (++host_dst_col == host_dst_width) {
+                host_dst_col = 0;
+                if (++host_dst_row == host_dst_height) {
+                    host_data_active = false;
+                    finish_rect(host_dst_width, host_dst_height);
+                }
+                // HOST_BYTE_ALIGN discards unused bits at the end of each row.
+                if (host_monochrome && (regs[ATI_HOST_CNTL] & 1))
+                    break;
             }
         }
     }
