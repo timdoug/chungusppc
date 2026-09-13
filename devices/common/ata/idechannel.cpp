@@ -66,6 +66,15 @@ void IdeChannel::register_device(int id, AtaInterface* dev_obj) {
 }
 
 uint32_t IdeChannel::read(const uint8_t reg_addr, const int size) {
+    // In a device 0 only configuration, device 0 answers for its absent
+    // neighbour with zeroes - that is how a driver decides there is nothing
+    // there. The all-ones-but-DD7 the stub returns is what an empty *channel*
+    // looks like, and reads as a ready device with DRQ asserted, which sends
+    // a driver off probing a drive that does not exist.
+    if (this->devices[this->cur_dev]->get_device_id() == DEVICE_ID_INVALID &&
+        this->devices[this->cur_dev ^ 1]->get_device_id() != DEVICE_ID_INVALID)
+        return 0;
+
     // A 32-bit access to the 16-bit data port moves two words. The first one
     // transferred sits at the lower address, i.e. in the high half as far as
     // a big endian guest is concerned. The 5200/6200 ROM's ATA driver reads
