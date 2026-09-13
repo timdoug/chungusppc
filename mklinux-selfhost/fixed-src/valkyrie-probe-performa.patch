@@ -1,0 +1,38 @@
+--- a/src/mach_kernel/ppc/POWERMAC/video_valkyrie.c
++++ b/src/mach_kernel/ppc/POWERMAC/video_valkyrie.c
+@@ -88,19 +88,20 @@
+ valkyrie_probe(caddr_t port)
+ {
+    switch(powermac_info.class) {
+       case POWERMAC_CLASS_PERFORMA:
+-	valkyrie_clut = (struct valkyrie_clut *) PERFORMA_VIDEO_CLUT;
+-
+-	if (valkyrie_node == NULL) {
+-		if (kmem_alloc(kernel_map, (vm_offset_t *)&valkyrie_node,
+-		    sizeof(device_node_t)) != KERN_SUCCESS) {
+-			printf("valkyrie_probe: no memory available!\n");
+-			return FALSE;
+-		}
+-	}
+-
+-	valkyrie_node->addrs[0].address = PERFORMA_VIDEO_BASE;
+-	valkyrie_node->next = NULL;
+-
++	/*
++	 * go() calls initialize_screen(), and so this probe, long before
++	 * vm_mem_bootstrap() has created vm_object_zone.  kmem_alloc() here
++	 * therefore reaches zalloc() with a null zone, reads a function
++	 * pointer from address 0x20 - still holding the 68k exception vector
++	 * Mac OS left there - and branches into the ROM.  The 603 takes an
++	 * ISI it cannot service and the machine is gone.
++	 *
++	 * Nothing on this path needed the node.  valkyrie_init() uses
++	 * PERFORMA_VIDEO_CLUT directly for this class, and only the PCI case
++	 * below, which fills valkyrie_node in from find_devices(), reads it.
++	 * The store through ->addrs was a null dereference of its own:
++	 * kmem_alloc returns zeroed memory and addrs is a pointer.
++	 */
++	valkyrie_clut = (struct valkyrie_clut *) PERFORMA_VIDEO_CLUT;
+ 	return TRUE;
+       case POWERMAC_CLASS_PCI:
+ 	if (valkyrie_node = find_devices("valkyrie"))
