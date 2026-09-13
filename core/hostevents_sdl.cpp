@@ -129,6 +129,21 @@ static const struct { const char *name; AdbKey key; } mod_names[] = {
     {"Option", AdbKey_Option}, {"Alt", AdbKey_Option}, {"Command", AdbKey_Command},
 };
 
+// ------------------ keys held down while the machine starts ------------------
+//
+// A Mac decides what kind of startup it is having from the keys held as it
+// comes up: Shift for extensions off, C to boot from CD, Command-Option-P-R to
+// zap PRAM. Holding them on the host only works if the emulator window already
+// has keyboard focus when the guest first reads the keyboard, roughly a second
+// and a half in, which it usually does not - the terminal the emulator was
+// launched from still has it. Naming them up front sidesteps the race.
+static std::vector<AdbKey> startup_keys;
+static uint32_t startup_keys_release_ticks = 0;
+
+// Long enough to cover loading a System Folder's worth of extensions, and the
+// guest is in no position to want real keystrokes before then.
+constexpr uint32_t STARTUP_KEYS_HOLD_MS = 10000;
+
 /** Map a printable character to its key, and whether shift is needed. */
 static bool char_to_key(char c, AdbKey *key, bool *shift) {
     static const char *unshifted = "abcdefghijklmnopqrstuvwxyz0123456789 -=[]\\;',./`";
@@ -151,6 +166,36 @@ static bool char_to_key(char c, AdbKey *key, bool *shift) {
     p = strchr(shifted, c);
     if (p != nullptr && c != '\0') { *key = keys[p - shifted]; *shift = true; return true; }
     return false;
+}
+
+/** Resolve one name from a startup key spec: a modifier, a named key, or a
+    single character. */
+static bool name_to_key(const std::string& name, AdbKey *key) {
+    for (auto &mn : mod_names)
+        if (name == mn.name) { *key = mn.key; return true; }
+    for (auto &kn : key_names)
+        if (name == kn.name) { *key = kn.key; return true; }
+    bool shift;
+    return name.size() == 1 && char_to_key(name[0], key, &shift);
+}
+
+void EventManager::set_startup_keys(const std::string& key_spec) {
+    startup_keys.clear();
+
+    std::string rest = key_spec;
+    while (!rest.empty()) {
+        size_t plus = rest.find('+');
+        std::string name = rest.substr(0, plus);
+        rest = (plus == std::string::npos) ? "" : rest.substr(plus + 1);
+
+        AdbKey key;
+        if (name.empty())
+            continue;
+        if (name_to_key(name, &key))
+            startup_keys.push_back(key);
+        else
+            LOG_F(WARNING, "startup keys: unknown key \"%s\"", name.c_str());
+    }
 }
 
 void EventManager::queue_key(AdbKey key, bool down) {
@@ -381,6 +426,18 @@ void EventManager::feed_input_script() {
 
 void EventManager::poll_events() {
     this->feed_input_script();
+
+    // Let go of the startup keys once the guest has had time to see them.
+    if (startup_keys_release_ticks && SDL_GetTicks() >= startup_keys_release_ticks) {
+        startup_keys_release_ticks = 0;
+        KeyboardEvent ke{};
+        for (auto it = startup_keys.rbegin(); it != startup_keys.rend(); ++it) {
+            ke.key = *it;
+            ke.flags = KEYBOARD_EVENT_UP;
+            this->_keyboard_signal.emit(ke);
+        }
+        startup_keys.clear();
+    }
 
     SDL_Event event;
 
@@ -742,6 +799,16 @@ void EventManager::post_keyboard_state_events() {
         ke.flags = KEYBOARD_EVENT_DOWN;
         this->_keyboard_signal.emit(ke);
     }
+    for (AdbKey key : startup_keys) {
+        LOG_F(INFO, "        Held from the command line: 0x%02X", key);
+        count++;
+        ke.key = key;
+        ke.flags = KEYBOARD_EVENT_DOWN;
+        this->_keyboard_signal.emit(ke);
+    }
+    if (!startup_keys.empty())
+        startup_keys_release_ticks = SDL_GetTicks() + STARTUP_KEYS_HOLD_MS;
+
     if (!count)
         LOG_F(INFO, "        (none)");
 
