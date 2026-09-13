@@ -156,20 +156,37 @@ and can be pointed elsewhere with the `machine_id` property.
 
 POST passes, the 68k emulator runs, and the ROM programs Valkyrie for 640x480
 at 4 bpp and 66.6 Hz and fills the frame buffer with the 50% desktop dither.
-It then settles into a stable idle: sampling the 68k PC finds it almost
-entirely in the VIA dispatcher and the VBL stack sniffer, A7 holds steady
-around `0x3F5FA8` so nothing is leaking exception frames, and only the 60 Hz
-tick asserts an interrupt. The main thread never gets further — no boot icon
-is drawn (the frame buffer centre stays pure dither), no SCSI or IDE probing
-happens, and only two CLUT entries are ever loaded, which is why the screen
-shows black rather than grey.
+It then wedges inside the first VBL interrupt, which has been traced this far:
+
+* The main thread is parked at ROM `0x3B0`, interrupted immediately after the
+  `move.w #$2000, sr` at `0x3AC` enabled interrupts, and never resumes. Its
+  exception frame sits at the top of the 68k stack and is never popped.
+* The stack holds exactly two nested level-1 frames and A7 stays put around
+  `0x3F5FA8`, so nothing is leaking frames — the outer handler simply never
+  finishes.
+* The VIA itself is healthy. CA1 ticks arrive at 60 Hz, the handler clears
+  them (IFR goes `0xC2` to `0x40`), roughly 74 interrupts a second are
+  asserted, and Capella's priority register reads idle when sampled.
+* The VBL handler at ROM `0x1DE96` clears CA1, bumps `Ticks`, sets bit 6 of
+  the `VBLQueue` flags at LowMem `0x160` as a re-entrancy guard, then drops
+  the interrupt mask to zero with `andi.w #$f8ff, sr`. The nesting is
+  therefore by design.
+* **That guard bit is still set when the machine is sampled**, so the outer
+  VBL never completed. Every later tick takes the `bne` at `0x1DEA8` and
+  leaves early, which is why the tick counter keeps advancing while nothing
+  else does.
+* The VBL queue is empty, `Lvl1DT` at LowMem `0x192` is populated sensibly,
+  and the spurious-interrupt slot `Lvl1DT[7]` is a plain `rts`, so the
+  dispatch itself is fine.
+
+The hang is therefore somewhere in the VBL handler after it lowers the mask
+and skips the empty queue, around ROM `0x1DEF6` onwards. Disassembling that
+tail properly — with Ghidra rather than the built-in disassembler, which
+misaligns in this region — is the next job.
 
 For comparison, `pm6400` on the same emulator reaches the boot-wait loop
 within seconds and draws the grey desktop, the blinking disk icon and the
-cursor, idling at 68k PCs in RAM rather than in ROM interrupt handlers. Making
-the 5200/6200 get that far is the next job; disassembling the ROM around the
-startup sequence with Ghidra would probably beat poking at it one routine at
-a time.
+cursor, idling at 68k PCs in RAM rather than in ROM interrupt handlers.
 
 Everything below is still a considered guess:
 
