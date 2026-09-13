@@ -66,6 +66,16 @@ void IdeChannel::register_device(int id, AtaInterface* dev_obj) {
 }
 
 uint32_t IdeChannel::read(const uint8_t reg_addr, const int size) {
+    // A 32-bit access to the 16-bit data port moves two words. The first one
+    // transferred sits at the lower address, i.e. in the high half as far as
+    // a big endian guest is concerned. The 5200/6200 ROM's ATA driver reads
+    // IDENTIFY data this way, eight longs at a time.
+    if (reg_addr == DATA && size == 4) {
+        uint32_t hi_word = this->devices[this->cur_dev]->read(reg_addr);
+        uint32_t lo_word = this->devices[this->cur_dev]->read(reg_addr);
+        return (hi_word << 16) | lo_word;
+    }
+
     return this->devices[this->cur_dev]->read(reg_addr);
 }
 
@@ -78,7 +88,12 @@ void IdeChannel::write(const uint8_t reg_addr, const uint32_t val, const int siz
 
     // redirect register writes to both devices
     for (auto& dev : this->devices) {
-        dev->write(reg_addr, val);
+        if (reg_addr == DATA && size == 4) {
+            dev->write(reg_addr, val >> 16);
+            dev->write(reg_addr, val & 0xFFFF);
+        } else {
+            dev->write(reg_addr, val);
+        }
     }
 }
 
