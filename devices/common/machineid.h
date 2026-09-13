@@ -62,6 +62,10 @@ public:
         if (size == 4 && offset == 0) {
             return *(uint32_t*)this->id;
         }
+        if (size == 2 && offset <= 2) {
+            // the 5200/6200 ROM reads the model half of the register as a word
+            return (this->id[offset] << 8) | this->id[offset + 1];
+        }
         if (size == 1 && offset < 4) {
             return this->id[offset];
         }

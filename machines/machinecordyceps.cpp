@@ -80,11 +80,13 @@ int MachineCordyceps::initialize(const std::string &id) {
         return -1;
     }
 
-    // The ROM reads a machine ID from the same place the NuBus Power Macs use.
-    // The value below is a guess: MkLinux's model_dep.c only tells us that the
-    // low byte is 0x50 or 0x58 on the 75 MHz models and 0x51 or 0x59 on the
-    // 80 MHz ones. Override it with the machine_id property while bringing up
-    // a new ROM.
+    // The ROM reads a machine ID from the same place the NuBus Power Macs use
+    // and looks it up in the table of machine descriptors at ROM offset
+    // 0x203DC, hanging at 0x1B8A8 when nothing matches. That table holds ten
+    // entries for this family, 0x3250 through 0x325E; the low byte agrees with
+    // MkLinux's model_dep.c, which expects 0x50 or 0x58 on the 75 MHz models
+    // and 0x51 or 0x59 on the 80 MHz ones. Which entry is which model is not
+    // yet known, so pick another with the machine_id property.
     gMachineObj->add_device("MachineID", std::unique_ptr<NubusMacID>(
         new NubusMacID(GET_INT_PROP("machine_id"))));
     f108_obj->add_mmio_region(0x5FFFFFFC, 4,
@@ -107,7 +109,7 @@ static const PropMap pm5200_settings = {
     {"rambank2_size",
         new IntProperty(0, std::vector<uint32_t>({0, 4, 8, 16, 32}))},
     {"machine_id",
-        new IntProperty(0x3050)},
+        new IntProperty(0x3250)},
     {"hdd_config",
         new StrProperty("Ide0:0")},
     {"emmo",
