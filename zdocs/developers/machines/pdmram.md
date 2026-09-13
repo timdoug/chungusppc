@@ -1,3 +1,42 @@
+# RAM in the Power Macintosh 7100 and 8100
+
+The 6100 ROM sizes RAM through HMC aliases and selects a compact address
+matrix. With two 32 MiB banks it hands Mach one contiguous 72 MiB range.
+The 7100/8100 ROM path leaves the reset matrix selected and reports separate
+ranges. The emulator handles these board layouts separately.
+
+HMC maps 8 MiB of motherboard RAM at `0x00000000`–`0x007fffff`.
+On the 7100/8100, expansion RAM uses separate physical ranges:
+
+| Bank | Base | Maximum size | Models |
+| --- | --- | --- | --- |
+| 1 | `0x01000000` | 32 MiB | 7100, 8100 |
+| 2 | `0x05000000` | 32 MiB | 7100, 8100 |
+| 3 | `0x09000000` | 32 MiB | 7100, 8100 |
+| 4 | `0x0d000000` | 32 MiB | 7100, 8100 |
+| 5 | `0x11000000` | 32 MiB | 8100 |
+| 6 | `0x15000000` | 32 MiB | 8100 |
+| 7 | `0x19000000` | 32 MiB | 8100 |
+| 8 | `0x1d000000` | 32 MiB | 8100 |
+
+This is the layout in Apple's [Enhanced Power Macintosh developer note,
+Appendix A](https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-PPC_Desktop/Enhanced_Power_Macintosh.pdf).
+The implemented 7100 and 8100 capacities are 136 and 264 MiB.
+
+On these two models, `rambankN_size` selects 0, 1, 2, 4, 8, 16 or 32 MiB at
+each base. Smaller banks leave the rest of their window unmapped. Each bank owns separate storage.
+
+The former contiguous mapping mirrored bank A at `0x10000000` for ROM sizing.
+On the 7100/8100, Mac OS reported both views as independent physical RAM.
+MkLinux then allocated overlapping pages: login could work, while filesystem checks or a 16 MiB disk
+transfer corrupted the kernel. Mapping the documented ranges removes that alias.
+The host regression test writes all banks before checking their contents.
+
+The serial control register retains its 35-bit read/write interface. Compact
+RAM matrix modes remain implemented for the 6100. The 7100/8100 implementation
+supports the reset matrix used by the tested Mac OS 7.6.1 ROM path; larger,
+undocumented SIMM configurations are not emulated on these models.
+
 # RAM Expansion in Power Macintosh 6100
 
 Power Macintosh 6100 comes with two RAM slots accepting 72-pin SIMMs.

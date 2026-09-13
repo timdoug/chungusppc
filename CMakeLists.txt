@@ -286,6 +286,16 @@ if (DPPC_BUILD_DEVICE_TESTS)
         $<TARGET_OBJECTS:loguru>)
     target_link_libraries(testamic PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
     add_test(NAME amic COMMAND testamic)
+    add_executable(testhmc tests/hmc.cpp tests/headless_display.cpp
+        $<TARGET_OBJECTS:core>
+        $<TARGET_OBJECTS:cpu_ppc>
+        $<TARGET_OBJECTS:debugger>
+        $<FILTER:$<TARGET_OBJECTS:devices>,EXCLUDE,display_sdl>
+        $<TARGET_OBJECTS:machines>
+        $<TARGET_OBJECTS:utils>
+        $<TARGET_OBJECTS:loguru>)
+    target_link_libraries(testhmc PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
+    add_test(NAME hmc COMMAND testhmc)
     add_executable(testcputiming tests/cputiming.cpp tests/headless_display.cpp
         $<TARGET_OBJECTS:core>
         $<TARGET_OBJECTS:cpu_ppc>
