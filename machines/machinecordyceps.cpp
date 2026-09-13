@@ -119,7 +119,7 @@ static const PropMap pm5200_settings = {
 // The hard disk is on IDE; a SCSI CD-ROM is attached with the cdr_img property
 // of the 53C96, the same way the NuBus Power Macs do it.
 static std::vector<std::string> pm5200_devices = {
-    "F108", "PrimeTimeTwo", "ValkyrieCordyceps", "AtaHardDisk"
+    "F108", "PrimeTimeTwo", "ValkyrieCordyceps", "AtaHardDisk", "AtaHardDisk2"
 };
 
 static const DeviceDescription Machine5200_descriptor = {

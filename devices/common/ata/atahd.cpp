@@ -35,17 +35,22 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using namespace ata_interface;
 
-AtaHardDisk::AtaHardDisk(std::string name) : AtaBaseDevice(name, DEVICE_TYPE_ATA) {
+AtaHardDisk::AtaHardDisk(std::string name, bool secondary)
+    : AtaBaseDevice(name, DEVICE_TYPE_ATA) {
+    this->secondary = secondary;
 }
 
 int AtaHardDisk::device_postinit() {
-    std::string hdd_config = GET_STR_PROP("hdd_config");
+    const char *cfg_prop = this->secondary ? "hdd2_config" : "hdd_config";
+    const char *img_prop = this->secondary ? "hdd2_img"    : "hdd_img";
+
+    std::string hdd_config = GET_STR_PROP(cfg_prop);
     if (hdd_config.empty()) {
-        LOG_F(ERROR, "%s: hdd_config property is empty", this->name.c_str());
+        LOG_F(ERROR, "%s: %s property is empty", this->name.c_str(), cfg_prop);
         return -1;
     }
 
-    std::string hdd_image_path = GET_STR_PROP("hdd_img");
+    std::string hdd_image_path = GET_STR_PROP(img_prop);
     if (hdd_image_path.empty())
         return 0;
 
@@ -409,3 +414,16 @@ static const DeviceDescription AtaHardDisk_Descriptor = {
 };
 
 REGISTER_DEVICE(AtaHardDisk, AtaHardDisk_Descriptor);
+
+// The second disk defaults to the slave of the first channel, which is where a
+// machine with only one IDE connector has to put it.
+static const PropMap AtaHardDisk2_Properties = {
+    {"hdd2_img", new StrProperty("")},
+    {"hdd2_config", new StrProperty("Ide0:1")},
+};
+
+static const DeviceDescription AtaHardDisk2_Descriptor = {
+    AtaHardDisk::create_second, {}, AtaHardDisk2_Properties, HWCompType::IDE_DEV
+};
+
+REGISTER_DEVICE(AtaHardDisk2, AtaHardDisk2_Descriptor);
