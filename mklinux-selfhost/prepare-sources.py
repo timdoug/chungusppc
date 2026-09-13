@@ -45,16 +45,17 @@ def prepare(target, check_only):
         # Do not let git apply inherit the enclosing ChungusPPC repository;
         # it would silently skip Git-format patch paths outside its subdirectory.
         environment = dict(os.environ, GIT_CEILING_DIRECTORIES=str(temporary))
-        subprocess.run(['git', 'apply', '--no-index', '--whitespace=nowarn',
-                        str(ROOT / metadata['patch'])], cwd=tree, env=environment, check=True)
+        for patch in metadata['patches']:
+            subprocess.run(['git', 'apply', '--no-index', '--whitespace=nowarn',
+                            str(ROOT / patch)], cwd=tree, env=environment, check=True)
 
         if target == 'mach':
-            changed = tree / metadata['patched_file']
-            if digest(changed) != metadata['patched_file_sha256']:
-                raise SystemExit('Patched Mach source differs from the boot-tested source')
+            for name, expected in metadata['patched_files'].items():
+                if digest(tree / name) != expected:
+                    raise SystemExit(f'Patched Mach source differs: {name}')
             for name in ['build_world', 'sandboxrc', 'rebuild-mach.sh']:
                 shutil.copy2(ROOT / 'tools' / name, tree / name)
-            print('mach: archive and patched ppc_init.c verified', flush=True)
+            print('mach: archive and all patched source files verified', flush=True)
         else:
             manifest = json.loads((PORT / 'source-manifest.json').read_text())
             actual = {str(p.relative_to(tree)): digest(p)
