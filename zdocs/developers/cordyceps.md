@@ -105,14 +105,21 @@ status register unmasks. The give-away in a trace is an endless alternation of
 VIA1 register D and register E reads and nothing else.
 
 ```
-IDE0/IDE1, VBL -> F108 IFR -> VIA2 slot IFR bit 0 -> VIA2 IFR bit 1 -> level 2
-SCSI, sound, floppy ------------------------------> VIA2 IFR --------> level 2
-Cuda, 60.15 Hz tick, timers ----------------------> VIA1 ------------> level 1
-SCC ---------------------------------------------------------------> level 4
+IDE0/IDE1 -> F108 IFR -> VIA2 slot IFR bit 0 -> VIA2 IFR bit 1 -> level 2
+Valkyrie VBL ----------> VIA2 slot IFR bit 6 -> VIA2 IFR bit 1 -> level 2
+SCSI, sound, floppy -------------------------> VIA2 IFR --------> level 2
+Cuda, 60.15 Hz tick, timers -----------------> VIA1 ------------> level 1
+SCC ----------------------------------------------------------> level 4
 ```
 
-The VIA2 slot flags use reverse logic (0 means asserted); the F108 flags are
-cleared by writing a 1.
+The VIA2 slot flags use reverse logic (0 means asserted). An F108 flag is
+cleared either by writing a 1 to the flag register at `0x1A101` or by writing
+the bit to `0x1A100`, which is what MkLinux's handler does; until it is
+cleared the F108 holds its output asserted. Nothing masks the slot lines
+individually - VIA2's IER is what decides whether any of this reaches the 68k.
+
+Putting the vertical blank on the F108 instead, where MkLinux registers its own
+VBL handler, stops Mac OS dead with `unserviceable slot interrupt`.
 
 Capella `+0x24` reports the resulting 68k interrupt priority level in its low
 three bits, **active low**, and the ROM passes it to the 68k emulator. All ones
@@ -388,7 +395,8 @@ null. The video console is the one that works.
 
 ### Where the Performa kernel gets to
 
-Much further. Mach comes up, hands over, and Linux 2.0.33-osfmach3 runs:
+All the way. Mach comes up, hands over, and MkLinux DR3 reaches a login prompt
+in about two minutes:
 
 ```
 Mach 3.0 VERSION(GENERIC_8.): root <osfmk>; Sat Aug  5 17:23:47 PDT 2000; ...
@@ -396,51 +404,57 @@ Emulating 32 MB of physical memory from 0x142c0000 to 0x162c0000
 using video mode 3 (640x480 at 50Hz interlaced), 8 bits/pixel
 Console: colour osfmach3_vc 80x30, 1 virtual console (max 63)
 Calibrating delay loop.. ok - 80.49 BogoMIPS
-Memory: 28140k/32768k available (1176k kernel code, 444k reserved, 42315k data)
 Linux version 2.0.33-osfmach3 (gilbert@venus.apple.com) ...
-MkLinux Serial Driver version 1.01
-Sound initialization complete
+Mach root device sd1b: major=0 minor=18
+VFS: Mounted root (ext2 filesystem) readonly.
+INIT: version 2.74 booting
+...
+MkLinux for Power Macintosh. Brought to you by Apple Computer, Inc.
+Developer Release 3 (Linux 2.0.33-osfmach3 on a PowerPC 603)
+Based on Red Hat Linux release 5.0 (Hurricane)
+
+mklinux login:
 ```
 
-It then stops in `mac_label.c`, after `printf("Reading descriptor\n")` and
-before the matching `Re-reading descriptor`, waiting on a read that never
-finishes. The last thing the disk sees is a RECALIBRATE.
+Getting the drive interrupt to Mach took most of the work. It arrives as
+`IntSrc::IDE0` → the F108's flag register → the F108's output → the VIA2 slot
+register → VIA2's IFR bit 1 → the 68k level-2 interrupt, and every stage was
+wrong in some way:
 
-Two emulator bugs were in the way of getting that far, both about how an absent
-device 1 behaves, and both fixed: an absent device in a device-0-only
-configuration has to read as zeroes rather than as the empty-channel `0xFF7F`,
-and a software reset has to leave device 0 selected.
+* **VIA2 IFR writes only cleared a flag when bit 7 was set.** That is the IER's
+  set/clear convention. On a 6522 a write of a one to an IFR bit clears it and
+  bit 7 is the read-only summary, so MkLinux's `*PERFORMA_VIA2_IFR = 0x02`, and
+  the `0x7F` its interrupt setup writes, both did nothing.
+* **The slot cascade was gated on a per-slot enable register.** The developer
+  note does describe one - "generates a level-2 interrupt if the slot interrupt
+  enable bit is set" - but nothing in MkLinux writes it, and the mask that
+  actually matters here is VIA2's own IER.
+* **Valkyrie's vertical blank was on the F108's "Keystone" flag.** With the
+  cascade live that reaches Mac OS as slot 0, which stops with `Sorry, a system
+  error occurred: unserviceable slot interrupt` - Mac OS's own diagnosis, and
+  the fastest way to tell the two apart. It belongs on the slot register's video
+  line, leaving the F108 output to the drives.
+* **Nothing dismissed an F108 flag.** MkLinux's handler writes the source's bit
+  to `0x50F1A100`, the register below the flags, and then zero. While a flag is
+  set the output stays down and no second interrupt arrives.
 
-What is left is a hole in the port. The `wdc` driver picks its register spacing
-from the machine class and gets it right:
+`performa_via2_slot_interrupt` is worth reading before touching any of this. It
+dismisses its own interrupt with a bare `0x02` to the VIA2 IFR and then calls
+the F108 handler *unconditionally*, without consulting the slot register - so
+VIA2 IFR bit 1 is the only thing that has to arrive.
 
-```
-002D0BE0  lwz   r0,-0x30A8(r9)   ; powermac_info.class
-002D0BE4  cmpwi r0,2             ; PERFORMA
-002D0BE8  beq   0x002D0BF4       ; ... four byte spacing, control at +0x38
-002D0BEC  cmpwi r0,4             ; POWERBOOK
-002D0BF0  bne   0x002D0C4C       ; ... otherwise sixteen byte spacing
-```
+### What is still wrong
 
-but the ATAPI accessors alongside it test for `POWERMAC_CLASS_POWERBOOK` alone,
-in a branchless select:
-
-```
-002D7568  lwz   r0,-0x30A8(r9)   ; powermac_info.class
-002D756C  xori  r11,r0,4         ; zero iff POWERBOOK
-   ...                           ; r11 = 0 for POWERBOOK, -1 otherwise
-002D7580  addi  r9,r31,0x60      ; sixteen byte spacing
-002D7584  addi  r0,r31,0x18      ; four byte spacing
-002D7588  and   r9,r9,r11
-002D758C  andc  r0,r0,r11
-002D7590  or    r11,r9,r0        ; pick one
-```
-
-So on a Performa the ATAPI probe writes Device/Head to `0x50F1A060` and its
-command to `0x50F1A070`, neither of which the F108 decodes - the ROM's own
-driver, which is the authority for this hardware, uses the four byte layout
-throughout. The probe is therefore invisible, and in particular the write that
-deselects device 1 and goes back to the disk never lands.
+* **Anything I/O bound is impractically slow.** MkLinux's SCSI driver spins:
+  around half a million CLEAR_FIFO commands a second, from `0x002C8128`, inside
+  a retry loop at `0x002C88DC`-`0x002C8984` that turns on a counter at
+  `+0x28` of its transfer descriptor. Booting a clean filesystem still takes two
+  minutes; a forced `fsck` does not finish in any reasonable time. This is the
+  `SCSI is working, but rather slow... partially a lack of pseudo-DMA code`
+  the README warns about, but half a million commands a second is worth a look
+  before accepting it.
+* **The ATAPI probe talks to the wrong addresses**, as below. It no longer
+  wedges the boot, but the IDE disk is not usable from MkLinux.
 
 Everything below is still a considered guess:
 
