@@ -25,6 +25,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define CHAR_IO_H
 
 #include <cinttypes>
+#include <deque>
+#include <string>
 
 #ifdef _WIN32
 #else
@@ -46,6 +48,7 @@ public:
 
     virtual int rcv_enable() { return 0; }
     virtual void rcv_disable() {}
+    virtual bool connected() const { return true; }
     virtual bool rcv_char_available() = 0;
     virtual bool rcv_char_available_now() = 0;
     virtual int xmit_char(uint8_t c) = 0;
@@ -55,13 +58,14 @@ public:
 /** Null character I/O backend. */
 class CharIoNull : public CharIoBackEnd {
 public:
+    bool connected() const override { return false; }
     CharIoNull()  = default;
     ~CharIoNull() = default;
 
-    bool rcv_char_available();
-    bool rcv_char_available_now();
-    int xmit_char(uint8_t c);
-    int rcv_char(uint8_t *c);
+    bool rcv_char_available() override;
+    bool rcv_char_available_now() override;
+    int xmit_char(uint8_t c) override;
+    int rcv_char(uint8_t *c) override;
 };
 
 /** Stdin character I/O backend. */
@@ -70,12 +74,12 @@ public:
     CharIoStdin() { this->stdio_inited = false; }
     ~CharIoStdin() = default;
 
-    int rcv_enable();
-    void rcv_disable();
-    bool rcv_char_available();
-    bool rcv_char_available_now();
-    int xmit_char(uint8_t c);
-    int rcv_char(uint8_t *c);
+    int rcv_enable() override;
+    void rcv_disable() override;
+    bool rcv_char_available() override;
+    bool rcv_char_available_now() override;
+    int xmit_char(uint8_t c) override;
+    int rcv_char(uint8_t *c) override;
 
 private:
     static void mysig_handler(int signum);
@@ -86,22 +90,26 @@ private:
 /** Socket character I/O backend. */
 class CharIoSocket : public CharIoBackEnd  {
 public:
-    CharIoSocket();
+    explicit CharIoSocket(std::string path = "chungussocket");
     ~CharIoSocket();
+    bool connected() const override { return acceptfd >= 0; }
 
-    int rcv_enable();
-    void rcv_disable();
-    bool rcv_char_available();
-    bool rcv_char_available_now();
-    int xmit_char(uint8_t c);
-    int rcv_char(uint8_t *c);
+    int rcv_enable() override;
+    void rcv_disable() override;
+    bool rcv_char_available() override;
+    bool rcv_char_available_now() override;
+    int xmit_char(uint8_t c) override;
+    int rcv_char(uint8_t *c) override;
 
 private:
     bool    socket_inited = false;
     int     sockfd = -1;
     int     acceptfd = -1;
-    const char* path = 0;
-    int     consecutivechars = 0;
+    std::string path;
+    std::deque<uint8_t> output;
+    void poll_connection();
+    void flush_output();
+    void disconnect();
 };
 
 #endif // CHAR_IO_H

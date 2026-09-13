@@ -2776,7 +2776,7 @@
     "osfmach3/chr_dev/planb.h": "ba5789acdaf97bcdc87b05f215fa0d45fef60d7c0c53e135a5b1d909f525e0d0",
     "osfmach3/chr_dev/psaux.c": "ec3d984c69bd6534a4616019686dbb38333c13afa1fd336a36de16ced1219336",
     "osfmach3/chr_dev/selection.h": "2165eb7f5fd7d57dd06e5ddd413a31c40a65bbc066d5d4eeae6c3b946c3f655c",
-    "osfmach3/chr_dev/serial.c": "84a1430b27b8ecd74b5f9bc3a0ede981255b01bf0eb91f194b688e5f4c3ed5f2",
+    "osfmach3/chr_dev/serial.c": "8e82e64b26fe13f1ad52c63e74831a642e90536b620c5bf208e68486ac2fdd71",
     "osfmach3/chr_dev/st.c": "e5c516255b6fb11972c4594490314e22c6e69984f7e491daffbf0c3e3b59b261",
     "osfmach3/chr_dev/sunmouse.c": "4d1c98527e5796c74cfaba3ab94b85952f81c35e8e69b982021d51e8d2532070",
     "osfmach3/chr_dev/tpqic02.c": "6dbd156c4c76a21ae113fc7a1c66251f7c41658acf436b8c9645ae6bd8978a9d",
@@ -2897,7 +2897,7 @@
     "scripts/tkparse.h": "509c8ec9504513c808b28a1d92eda30e1297f20ad562933eec8533ba120a2f6a"
   },
   "artifacts": {
-    "mklinux-on-linux-2.0.40.patch": "0bfd1e1f2adb28f01687966b8aa68da2bf80455d7521c137c594c252fcae93b4"
+    "mklinux-on-linux-2.0.40.patch": "668e832beb73bbc980d8a1f6333c040a83f53f839fcbbe68985876ad988f149c"
   },
   "note": "The full patch applies to Linux 2.0.40. files contains the expected SHA-256 of every output source file; inputs records upstream and MkLinux provenance."
 }

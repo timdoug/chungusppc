@@ -265,251 +265,107 @@ int CharIoStdin::rcv_char(uint8_t *c)
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/errno.h>
+#include <fcntl.h>
 
 
-CharIoSocket::CharIoSocket()
+CharIoSocket::CharIoSocket(std::string path) : path(std::move(path))
 {
-    int rc;
-
-    path = "chungussocket";
-
-    do {
-        rc = unlink(path);
-        if (rc == 0) {
-            LOG_F(INFO, "socket unlinked %s", path);
-        }
-        else if (errno != ENOENT) {
-            LOG_F(INFO, "socket unlink err: %s", strerror(errno));
-            break;
-        }
-
-        sockaddr_un address;
-        memset(&address, 0, sizeof(address));
-        address.sun_family = AF_UNIX;
-        strcpy(address.sun_path, path);
-
-        this->sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
-        if (this->sockfd == -1) {
-            LOG_F(INFO, "socket create err: %s", strerror(errno));
-            break;
-        }
-
-        rc = bind(this->sockfd, (sockaddr*)(&address), sizeof(address));
-        if (rc == -1) {
-            LOG_F(INFO, "socket bind err: %s", strerror(errno));
-            close(this->sockfd);
-            this->sockfd = -1;
-            break;
-        }
-
-        rc = listen(this->sockfd, 100);
-        if (rc == -1) {
-            LOG_F(INFO, "socket listen err: %s", strerror(errno));
-            close(this->sockfd);
-            this->sockfd = -1;
-            break;
-        }
-
-        LOG_F(INFO, "socket listen %d", sockfd);
-
-    } while (0);
-}
-
-
-CharIoSocket::~CharIoSocket() {
-    unlink(path);
-    if (errno != ENOENT) {
-        LOG_F(INFO, "socket unlink err: %s", strerror(errno));
-    }
-    if (sockfd != -1) {
+    sockaddr_un address{};
+    address.sun_family = AF_UNIX;
+    if (this->path.size() >= sizeof(address.sun_path)) return;
+    std::strcpy(address.sun_path, this->path.c_str());
+    unlink(this->path.c_str());
+    sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sockfd < 0) return;
+    if (bind(sockfd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0 ||
+        listen(sockfd, 1) < 0 || fcntl(sockfd, F_SETFL, O_NONBLOCK) < 0) {
+        LOG_F(ERROR, "Serial socket %s: %s", this->path.c_str(), strerror(errno));
         close(sockfd);
         sockfd = -1;
-    }
-}
-
-
-int CharIoSocket::rcv_enable()
-{
-    if (this->socket_inited)
-        return 0;
-
-    this->socket_inited = true;
-
-    return 0;
-}
-
-void CharIoSocket::rcv_disable()
-{
-    if (!this->socket_inited)
         return;
-
-    this->socket_inited = false;
-}
-
-bool CharIoSocket::rcv_char_available()
-{
-    if (consecutivechars >= 15) {
-        consecutivechars++;
-        if (consecutivechars >= 800)
-            consecutivechars = 0;
-        return 0;
     }
-    return this->rcv_char_available_now();
+    LOG_F(INFO, "Serial socket listening at %s", this->path.c_str());
 }
+
+CharIoSocket::~CharIoSocket()
+{
+    disconnect();
+    if (sockfd >= 0) {
+        close(sockfd);
+        unlink(path.c_str());
+    }
+}
+
+void CharIoSocket::disconnect()
+{
+    if (acceptfd >= 0) close(acceptfd);
+    acceptfd = -1;
+    output.clear();
+}
+
+void CharIoSocket::poll_connection()
+{
+    if (acceptfd < 0 && sockfd >= 0) {
+        acceptfd = accept(sockfd, nullptr, nullptr);
+        if (acceptfd >= 0) {
+            fcntl(acceptfd, F_SETFL, O_NONBLOCK);
+#ifdef SO_NOSIGPIPE
+            int enabled = 1;
+            setsockopt(acceptfd, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof(enabled));
+#endif
+        }
+    }
+    flush_output();
+}
+
+void CharIoSocket::flush_output()
+{
+    while (acceptfd >= 0 && !output.empty()) {
+        uint8_t byte = output.front();
+#ifdef MSG_NOSIGNAL
+        int flags = MSG_NOSIGNAL;
+#else
+        int flags = 0;
+#endif
+        int sent = send(acceptfd, &byte, 1, flags);
+        if (sent == 1) output.pop_front();
+        else if (sent < 0 && errno == EINTR) continue;
+        else if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
+        else { disconnect(); break; }
+    }
+}
+
+int CharIoSocket::rcv_enable() { socket_inited = true; return 0; }
+void CharIoSocket::rcv_disable() { socket_inited = false; }
+bool CharIoSocket::rcv_char_available() { return rcv_char_available_now(); }
 
 bool CharIoSocket::rcv_char_available_now()
 {
-    int sel_rv = 0;
-    bool havechars = false;
-    fd_set readfds;
-    fd_set writefds;
-    fd_set errorfds;
-
-    int sockmax = 0;
-    if (this->sockfd != -1) {
-        FD_ZERO(&readfds);
-        FD_SET(this->sockfd, &readfds);
-        if (this->sockfd > sockmax) sockmax = this->sockfd;
-        if (this->acceptfd != -1) {
-            FD_SET(this->acceptfd, &readfds);
-            if (this->acceptfd > sockmax) sockmax = this->acceptfd;
-        }
-        writefds = readfds;
-        errorfds = readfds;
-
-        struct timeval timeout;
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 0;
-
-        sel_rv = select(sockmax + 1, &readfds, &writefds, &errorfds, &timeout);
-        if (sel_rv == -1) {
-            LOG_F(INFO, "socket select err: %s", strerror(errno));
-        }
-    }
-
-    if (sel_rv > 0) {
-        if (this->sockfd != -1) {
-             if (FD_ISSET(this->sockfd, &readfds)) {
-                uint8_t c;
-                int received = (int)recv(this->sockfd, &c, 1, 0);
-                if (received == -1) {
-                    if (this->acceptfd == -1) {
-                        #if 0
-                            LOG_F(INFO, "socket sock read (not accepted yet) err: %s",
-                                strerror(errno)); // this happens once before accept
-                        #endif
-                    }
-                    else {
-                        LOG_F(INFO, "socket sock read err: %s", strerror(errno)); // should never happen
-                    }
-                }
-                else if (received == 1) {
-                    LOG_F(INFO, "socket sock read '%c'", c); // should never happen
-                }
-                else {
-                    LOG_F(INFO, "socket sock read %d", received); // should never happen
-                }
-
-                if (this->acceptfd == -1) {
-                    sockaddr_un acceptfdaddr;
-                    memset(&acceptfdaddr, 0, sizeof(acceptfdaddr));
-                    socklen_t len = sizeof(acceptfdaddr);
-                    this->acceptfd = accept(this->sockfd, (struct sockaddr *) &acceptfdaddr, &len);
-                    if (this->acceptfd == -1) {
-                        LOG_F(INFO, "socket accept err: %s", strerror(errno));
-                    }
-                    else {
-                        LOG_F(INFO, "socket accept %d", acceptfd);
-                    }
-                }
-            } // if read
-
-            if (FD_ISSET(this->sockfd, &writefds)) {
-                LOG_F(INFO, "socket sock write");
-            }
-
-            if (FD_ISSET(this->sockfd, &errorfds)) {
-                LOG_F(INFO, "socket sock error");
-            }
-        } // if this->sockfd
-
-        if (this->acceptfd != -1) {
-            if (FD_ISSET(this->acceptfd, &readfds)) {
-                // LOG_F(INFO, "socket accept read havechars");
-                havechars = true;
-                consecutivechars++;
-            } // if read
-
-            if (FD_ISSET(this->acceptfd, &writefds)) {
-                // LOG_F(INFO, "socket accept write"); // this is usually always true
-            }
-
-            if (FD_ISSET(this->acceptfd, &errorfds)) {
-                LOG_F(INFO, "socket accept error");
-            }
-        } // if this->acceptfd
-    }
-    else
-        consecutivechars = 0;
-    return havechars;
+    poll_connection();
+    if (acceptfd < 0) return false;
+    uint8_t byte;
+    int count = recv(acceptfd, &byte, 1, MSG_PEEK);
+    if (count == 1) return socket_inited;
+    if (count == 0 || (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR))
+        disconnect();
+    return false;
 }
 
 int CharIoSocket::xmit_char(uint8_t c)
 {
-    write(STDOUT_FILENO, &c, 1);
-
-    if (this->acceptfd == -1)
-        this->rcv_char_available_now();
-
-    if (this->acceptfd != -1) {
-        int sent = (int)send(this->acceptfd, &c, 1, 0);
-        if (sent == -1) {
-            LOG_F(INFO, "socket accept write err: %s", strerror(errno));
-        }
-        if (sent == 1) {
-            /*
-            if (c < ' ') {
-                LOG_F(INFO, "socket accept write '\\x%02X'", c);
-            } else {
-                LOG_F(INFO, "socket accept write '%c'", c);
-            }
-            */
-        }
-        else {
-            LOG_F(INFO, "socket accept write %d", sent);
-        }
+    poll_connection();
+    if (acceptfd >= 0) {
+        output.push_back(c);
+        flush_output();
     }
     return 0;
 }
 
 int CharIoSocket::rcv_char(uint8_t *c)
 {
-    if (this->acceptfd == -1)
-        this->rcv_char_available_now();
-
-    if (this->acceptfd != -1) {
-        int received = (int)recv(this->acceptfd, c, 1, 0);
-        if (received == -1) {
-            LOG_F(INFO, "socket accept read err: %s", strerror(errno));
-        }
-        else if (received == 1) {
-            /*
-            if (c) {
-                if (*c < ' ') {
-                    LOG_F(INFO, "socket accept write '\\x%02X'", *c);
-                } else {
-                    LOG_F(INFO, "socket accept read '%c'", *c);
-                }
-            } else {
-                LOG_F(INFO, "socket accept read %d", received);
-            }
-            */
-        }
-        else {
-            LOG_F(INFO, "socket accept read %d", received);
-        }
-    }
-    return 0;
+    *c = 0;
+    if (!rcv_char_available_now()) return -1;
+    return recv(acceptfd, c, 1, 0) == 1 ? 0 : -1;
 }
 
 #endif
