@@ -316,8 +316,8 @@ The machines that currently work the best are the Power Mac 6100, the Power Mac 
 Early implementations of the iMac G3, Power Mac G3 Blue and White, and Apple Pippin are also present.
 
 The Power Macintosh 5200 (`pm5200`) and Performa 6200 (`pm6200`) are new and
-get through the ROM's power-on self test but halt before video comes up, so
-expect to do some bring-up work.
+get through the ROM's power-on self test and bring up video, but do not reach
+a boot screen yet, so expect to do some bring-up work.
 See the [Cordyceps notes](../developers/cordyceps.md) for the address map and
 for the guesses that a first boot would confirm or disprove.
 

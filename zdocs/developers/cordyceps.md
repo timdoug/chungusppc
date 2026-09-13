@@ -41,7 +41,7 @@ DIMM together with a 256 KB L2 cache.
 | `0x00000000` | RAM |
 | `0x40000000` | 603 ROM space |
 | `0x50F00000` | I/O page, decoded by PrimeTime II |
-| `0x53000000` | Capella registers (`+0x18` acknowledges interrupts) |
+| `0x53000000` | Capella registers (interrupt acknowledge and priority level) |
 | `0xF9000000` | display RAM |
 | `0xFE000000` | PDS expansion card (NuBus slot `$E`) |
 | `0xFFC00000` | ROM image the 603 starts from |
@@ -90,6 +90,13 @@ SCC ---------------------------------------------------------------> level 4
 The VIA2 slot flags use reverse logic (0 means asserted); the F108 flags are
 cleared by writing a 1.
 
+Capella `+0x24` reports the resulting 68k interrupt priority level in its low
+three bits, **active low**, and the ROM passes it to the 68k emulator. All ones
+means nothing is pending. Returning zero instead looks like level 7, so the
+emulator takes an NMI before the 68k ROM has set up a stack pointer, pushes an
+exception frame through the ROM checksum word it is still using as A7, faults,
+and double-faults into the nanokernel panic.
+
 ## Debugging the ROM
 
 The ROM is far more talkative than it looks, which makes bring-up tractable.
@@ -118,25 +125,38 @@ The ROM is far more talkative than it looks, which makes bring-up tractable.
   what died: `srr1` bit 14 set means the 68k emulator executed a trap
   instruction.
 
+## The machine ID
+
+The ROM reads the ID at `0x5FFFFFFC` — twice as a longword, once as the low
+byte, and once as a **16-bit word**, which is why `NubusMacID` had to learn
+word reads. It then walks a table of machine descriptors: `0x1B7F0` loads the
+table base `0x203DC`, and for each self-relative entry compares the ID against
+the word at `+0x58` of the descriptor. Running off the end of the table
+branches to `0x1B8A8`, a `bra.s *` that hangs the machine with no diagnostic
+at all.
+
+That table holds ten entries for this family: `0x3250`, `0x3251`, `0x3254`,
+`0x3255`, `0x3256`, `0x3258`, `0x3259`, `0x325C`, `0x325D` and `0x325E`. The
+low bytes agree with MkLinux's `model_dep.c`, which expects `0x50`/`0x58` on
+75 MHz models and `0x51`/`0x59` on 80 MHz ones. Which entry corresponds to
+which model is not yet known; `pm5200` and `pm6200` both default to `0x3250`
+and can be pointed elsewhere with the `machine_id` property.
+
 ## Status and unverified guesses
 
-The ROM currently gets through the startup chime, RAM sizing, Cuda
-communication and the rest of POST, then the 68k emulator traps at virtual
-`0x6806D35C` and the nanokernel halts, before any video is programmed. That
-trap is the next thing to chase; it happens for every `machine_id` tried.
+POST passes, the 68k emulator runs, and the ROM programs Valkyrie for 640x480
+at 4 bpp and 66.6 Hz and fills the frame buffer with the 50% desktop dither.
+The screen is still black: the ROM has only loaded two CLUT entries by then,
+at indices 127 and 255, and nothing has coloured the pixel values actually on
+screen. With no boot device attached the ROM keeps running without reaching a
+boot screen, so that is the next thing to chase.
 
 Everything below is still a considered guess:
 
-* **The machine ID.** `NubusMacID` is mapped at `0x5FFFFFFC` as on the NuBus
-  Power Macs, and the ROM does read it — twice as a word and once as the low
-  byte, just before RAM sizing. MkLinux only tells us the low byte is
-  `0x50`/`0x58` on 75 MHz models and `0x51`/`0x59` on 80 MHz ones. `0x3050`,
-  `0x3058`, `0x3051` and `0x3010` all reach the same halt by slightly
-  different paths. Change it with the `machine_id` property rather than by
-  recompiling.
 * **The device at `0x50F0E000`.** Written from `0x403030E8`-`0x40303464`
   through an index register at `+0x7C` with data at `+0x04`..`+0x34`, and read
-  back at `+0x2C`. Unidentified; the writes are currently logged and dropped.
+  back at `+0x2C`. Also probed at `0x50F0A000` and `0x50F1FC00` later in the
+  boot. Unidentified; the writes are currently logged and dropped.
 * **Where Valkyrie's VBL lands.** MkLinux registers its VBL handler on F108 flag
   bit 6, so that is what is wired up, but the VIA2 slot register also has a
   "video" bit.
