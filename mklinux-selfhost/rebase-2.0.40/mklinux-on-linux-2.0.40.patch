@@ -34633,10 +34633,10 @@ index a1e34380..37014ae5 100644
  		return;
 diff --git a/drivers/char/pmac-cons.c b/drivers/char/pmac-cons.c
 new file mode 100644
-index 00000000..b83ae058
+index 00000000..264952e5
 --- /dev/null
 +++ b/drivers/char/pmac-cons.c
-@@ -0,0 +1,2536 @@
+@@ -0,0 +1,2532 @@
 +/*
 + * pmac-cons.c: Console support for PowerMac (PCI-based).
 + *
@@ -35581,14 +35581,10 @@ index 00000000..b83ae058
 +			     osfmach3_video_port));
 +		panic("osfmach3_vc_map: can't get status for video console\n");
 +	}
-+#if 1
-+	osfmach3_video_map_size = PAGE_ALIGN(vci.v_rowbytes * vci.v_height *
-+					     (vci.v_depth >= 8?
-+					      (vci.v_depth >> 3):
-+					      (vci.v_depth >> 2)));
-+#else
-+	osfmach3_video_map_size = 8 * 1024 * 1024;	/* XXX 8 MB */
-+#endif
++	/* Rowbytes already includes pixel depth. The device mapping starts at
++	 * the containing page, so include the framebuffer's offset in that page. */
++	osfmach3_video_map_size = PAGE_ALIGN(vci.v_rowbytes * vci.v_height +
++					   (vci.v_baseaddr % PAGE_SIZE));
 +	kr = device_map(osfmach3_video_port,
 +			VM_PROT_READ | VM_PROT_WRITE,
 +			0,
@@ -35625,7 +35621,7 @@ index 00000000..b83ae058
 +
 +	frame_buffer = (unsigned char *) osfmach3_video_map_base +
 +		(vci.v_baseaddr % PAGE_SIZE);
-+	total_vram = osfmach3_video_map_size;
++	total_vram = osfmach3_video_map_size - (vci.v_baseaddr % PAGE_SIZE);
 +
 +	for (video_mode = 1; video_mode <= VMODE_MAX; video_mode++) {
 +		if (vmode_attrs[video_mode - 1].hres == vci.v_width &&
