@@ -1,7 +1,8 @@
 # Rebuilding Mach and MkLinux 2.0.40
 
 Build the OSF Mach microkernel with its read-only memory reservation fix and
-the MkLinux server ported to Linux `2.0.40-osfmach3`. This directory contains
+quiet floppy driver, plus the MkLinux server ported to Linux `2.0.40-osfmach3`.
+This directory contains
 the patches, configuration, source checksums, build tools, and regression tests.
 Original compressed archives in `sources/` allow offline reproduction and are
 ignored by Git. Extracted host trees and transfer archives are disposable.
@@ -15,7 +16,7 @@ python3 mklinux-selfhost/prepare-sources.py --check
 python3 mklinux-selfhost/prepare-sources.py
 ```
 
-The first command verifies the inputs, applies both patches in temporary
+The first command verifies the inputs, applies the patches in temporary
 directories, and compares the output to the boot-tested sources. The second
 also writes `dist/osfmk.tar.gz` and `dist/mklinux-2.0.40.tar.gz`, including the
 build scripts and configuration. Either accepts `mach` or `linux` to prepare
@@ -87,6 +88,11 @@ humount
 GNU ld can place `.rodata` and `.sdata2` after `etext` in the executable load
 segment. The Mach patch reserves that complete segment so its allocator cannot
 reuse memory containing live kernel constants and dispatch tables.
+
+The floppy patch puts the per-interrupt `HALISR` and sector-lookup
+`HALGetNextAddr`/`DMASTATUS` traces behind `MACH_DEBUG`, like the driver's
+other debug output. `PRODUCTION` skips these prints and diagnostic register
+reads. Error reporting remains enabled.
 
 ## Build Linux 2.0.40
 
