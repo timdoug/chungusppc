@@ -324,11 +324,21 @@ A second IDE disk can be attached to any machine with `--hdd2_img`, which puts
 it on `Ide0:1`; `--hdd2_config` moves it to another bus or unit.
 
 `--hold-keys` names keys to hold down while the machine starts, joined with
-`+`, the way you would hold them on a real Mac: `--hold-keys Shift` boots with
-extensions off, `--hold-keys Command+Option+P+R` zaps PRAM. Holding them on the
-host keyboard instead rarely works, because the guest reads the keyboard about
-a second and a half in and the emulator window usually does not have focus by
-then.
+`+`, the way you would hold them on a real Mac: `--hold-keys Shift` for
+extensions off, `--hold-keys Command+Option+P+R` to zap PRAM. Holding them on
+the host keyboard instead rarely works, because the guest reads the keyboard
+about a second and a half in and the emulator window usually does not have
+focus by then.
+
+The keys reach the guest and change its behaviour, but how faithfully is not
+established. On a Mac OS 7.6 volume, `--hold-keys Shift` does stop an extension
+from loading, and the machine then wedges partway through startup rather than
+reaching a desktop; `--hold-keys SPACE` does not bring up Extensions Manager at
+all. Treat it as working for the emulator's own purposes and unproven as a
+faithful model of startup key handling.
+
+Scripted input also has `hold` and `release` verbs for pressing a key at a
+chosen moment rather than from power-on.
 See the [Cordyceps notes](../developers/cordyceps.md) for the address map and
 for the guesses that a full boot would confirm or disprove.
 
