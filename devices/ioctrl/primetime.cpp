@@ -435,6 +435,17 @@ void PrimeTimeTwo::ack_cpu_int(uint8_t level_mask, uint8_t irq_line_state)
     }
 }
 
+// Capella reports this level to the ROM, which hands it to the 68k emulator as
+// the interrupt priority level. cpu_int_lines uses one bit per level.
+uint8_t PrimeTimeTwo::get_int_level() const
+{
+    for (int level = 7; level > 0; level--) {
+        if (this->cpu_int_lines & (1 << level))
+            return level;
+    }
+    return 0;
+}
+
 void PrimeTimeTwo::clear_cpu_int()
 {
     if (this->cpu_irq) {
