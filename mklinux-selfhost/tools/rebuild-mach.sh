@@ -22,6 +22,10 @@ if strings "$kernel" | grep -q PROBE; then
     echo 'ERROR: diagnostic probes remain in the kernel'
     exit 1
 fi
+if strings "$kernel" | grep -E 'HALISR:|HALGetNextAddr:|DMASTATUS='; then
+    echo 'ERROR: floppy debug traces remain in the production kernel'
+    exit 1
+fi
 ls -l "$kernel"
 sync
 echo "MACH_BUILD_FINISHED $(date)"

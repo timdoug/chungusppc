@@ -1,0 +1,32 @@
+--- a/src/mach_kernel/ppc/POWERMAC/floppy/swimiiicommonhal.c
++++ b/src/mach_kernel/ppc/POWERMAC/floppy/swimiiicommonhal.c
+@@ -1510,7 +1510,9 @@
+     SynchronizeIO();
+ 
+     // See if the Floppy was the one that requested an interrupt.
+-    printf("HALISR:0x%x ",pendingInterrupts);              
++#if MACH_DEBUG
++    printf("HALISR:0x%x ",pendingInterrupts);
++#endif
+     //if(pendingInterrupts &0x08)PrintDMA();
+     if (pendingInterrupts != 0) {
+ 
+@@ -2303,7 +2305,9 @@
+ 	 * Exit the retry loop as successful.
+ 	 */
+ 
+-    } {
++    }
++#if MACH_DEBUG
++    {
+ 	long xxx; dbdma_regmap_t *regmap;
+       xxx = *FloppySWIMIIIRegs.rInterrupt; eieio();
+ 	      // SynchronizeIO();
+@@ -2312,6 +2316,7 @@
+       xxx = regmap->d_status; eieio();
+              printf("DMASTATUS= 0x%x ",xxx);
+     }
++#endif
+     /*
+      * Cancel read mode and return any errors.
+      */
