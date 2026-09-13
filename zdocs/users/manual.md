@@ -322,6 +322,15 @@ booting. A SCSI CD-ROM does not work yet.
 
 A second IDE disk can be attached to any machine with `--hdd2_img`, which puts
 it on `Ide0:1`; `--hdd2_config` moves it to another bus or unit.
+
+`--hold-keys` names keys to hold down while the machine starts, joined with
+`+`, the way you would hold them on a real Mac: `--hold-keys Shift`,
+`--hold-keys Command+Option+P+R`. Holding them on the host keyboard instead
+rarely works, because the guest reads the keyboard about a second and a half in
+and the emulator window usually does not have focus yet. The keys reach the
+guest - they show up in the ADB keyboard's register 0 - but Mac OS does not
+appear to act on them at startup yet, so extensions-off and friends still need
+work.
 See the [Cordyceps notes](../developers/cordyceps.md) for the address map and
 for the guesses that a full boot would confirm or disprove.
 

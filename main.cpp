@@ -118,6 +118,7 @@ int main(int argc, char** argv) {
     bool deterministic_interactive = false;
     string deterministic_mode = "strict";
     string keyboard_string = "Eng_USA";
+    string startup_keys;
 
     const std::map<std::string, int> kbd_map{
         {"Eng_USA", 0}, {"Eng_GBR", 1}, {"Fra_FRA", 10}, {"Deu_DEU", 20},
@@ -135,6 +136,9 @@ int main(int argc, char** argv) {
     execution_mode_group->add_flag("-d,--debugger", debugger_enter,
         "Enter the built-in debugger");
     emu->add_option("-k,--keyboard", keyboard_string, "Specify keyboard ID");
+    emu->add_option("--hold-keys", startup_keys,
+        "Keys to hold down while the machine starts, joined with '+', "
+        "as in Shift for extensions off or Command+Option+P+R");
     emu->add_option("-w,--workingdir", working_directory_path, "Specifies working directory")
         ->check(WorkingDirectory)->capture_default_str();
     auto bootrom_opt = emu->add_option("-b,--bootrom", bootrom_path, "Specifies BootROM path")
@@ -326,6 +330,9 @@ int main(int argc, char** argv) {
 #endif
 
     keyboard_id = kbd_map.at(keyboard_string);
+
+    if (!startup_keys.empty())
+        EventManager::set_startup_keys(startup_keys);
 
     while (true) {
         run_machine(
