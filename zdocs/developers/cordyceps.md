@@ -272,35 +272,44 @@ no DMA channel only.
 
 ## MkLinux
 
-The booter runs. Mac OS boots off the IDE disk, launches the MkLinux booter, and
-its splash screen comes up with the Mach options and root device - so everything
-up to the handoff works.
+Mac OS boots off the IDE disk, launches the MkLinux booter, and the booter hands
+off without crashing - but only once its root device actually exists.
 
-Then the PowerPC branches to `0x4080281C` and dies. Facts established so far:
+That took a while to establish because the crash looked like an emulator bug.
+The booter would branch to `0x4080281C` and die on an illegal instruction, and
+it did so whether or not a SCSI disk was attached, which seemed to rule the root
+device out. It did not: the root device was missing in *every* one of those
+runs. The call site explains the rest:
 
-* The exception is `EXC_PROGRAM` with `srr1` bit `0x00080000`, an illegal
-  instruction, and the branch comes from `lr = 0x0022F498` in RAM.
-* ROM offset `0x281C` is 68k code - it sits in a run of `bsr.s` stubs that looks
-  like the 68k exception dispatch table, ending `0x08F8 0x0007 0x0C2C` / `67F6` /
-  `4E73` (`rte`). So this is a 68k address being executed as PowerPC.
-* The same code at `0x0022F498` also dereferences `0xDEADBEF2` just beforehand,
-  which is a poison value, so it is reading a structure that was never filled in.
-* Nothing in the machine ever reads physical `0x408xxxxx` as data, so the 68k
-  ROM is not aliased there - the nanokernel maps the 68k ROM base `0x40800000`
-  onto physical `0x40000000` through the page tables. Mapping a second copy of
-  the ROM at `0x40800000` makes the fetch succeed and the machine then spins
-  forever executing 68k bytes as PowerPC, which is strictly worse than the
-  abort. Don't.
+```
+0022F480  mr    r31,r3
+0022F484  lwz   r0,32(r31)     ; a method pointer from [r31+0x20]
+0022F488  cmpwi r0,0
+0022F48C  beq   +0x310         ; skip if null
+0022F490  mtlr  r0
+0022F494  blrl                 ; call it
+```
 
-That points at a mixed-mode call - something that should trap into the 68k
-emulator taking a direct branch instead - but which mechanism is not yet known.
+`r3` arrives as zero, so `r31` is zero and the load comes from address `0x20` -
+68k exception vector 8, the privilege violation vector, which holds
+`0x4080280C`. The booter then calls a 68k ROM vector as a PowerPC function. The
+null check one instruction earlier only guards against the field being zero, not
+against the object being zero. So the wild branch is the booter dereferencing a
+failed device lookup, not anything the emulator did wrong.
 
-A note on capture: `save_screenshot` used to read the frame back out of the
-locked SDL texture, which is write-only memory on the Metal backend and yields
-a uniformly black BMP on every machine. It now converts the guest framebuffer a
-second time into a surface we own. Any "the screen is black" conclusion drawn
-before that fix is worthless.
+Give it the disk it is looking for and the crash goes away:
 
+```
+--hdd_img macos.img --scsi_hdd_img macos.img:mklinux.img --rambank1_size 32
+```
+
+The root device in the booter is `/dev/sdb2`, the *second* SCSI disk, so the
+volume has to be at the second SCSI ID - MkLinux names them in discovery order,
+not by ID, so one disk on its own is `sda` no matter which ID it sits at.
+
+From there the machine runs on without crashing and without reaching a console:
+no output, no video mode change, the display refresh still ticking. That is the
+next thing to chase, and it is a different problem from the branch.
 
 Everything below is still a considered guess:
 
