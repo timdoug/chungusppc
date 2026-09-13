@@ -35,6 +35,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <devices/memctrl/memctrlbase.h>
 
 #include <cinttypes>
+#include <vector>
 #include <memory>
 
 /* Control register bit definitions. */
@@ -97,6 +98,7 @@ public:
     void write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size);
 
     int install_ram(uint32_t mb_bank_size, uint32_t bank_a_size, uint32_t bank_b_size);
+    int install_ram_banks(const std::vector<uint32_t>& banks);
 
     uint64_t get_control_reg(void) const {
         return this->ctrl_reg;
@@ -106,6 +108,7 @@ protected:
     void remap_ram_regions();
 
 private:
+    bool        fixed_ram_layout = false;
     int         bit_pos     = 0;
     uint64_t    ctrl_reg    = 0;
     uint8_t     bank_config = BANK_CFG_128MB;
