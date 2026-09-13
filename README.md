@@ -32,14 +32,18 @@ IDE disk.
 
 X/GNOME also works on the 6100, 6400, 6500, 7500 and 9500. X hasn't been
 checked across the full list.
-Sound and floppies haven't been tested. Alchemy/Gazelle have no emulated
-Ethernet. ATI Rage text and window drawing work on the 6500/5500/TAM; some
+Audio and floppy reads/writes work on the 6100, 5400, 6400, 6500 and 7500.
+Both serial ports passed binary transfers on the 7500 and 8100; serial login
+also works.
+Alchemy/Gazelle have no emulated Ethernet. ATI Rage text and window drawing
+work on the 6500/5500/TAM; some
 accelerator operations are still missing. Some models share the same emulated
 hardware, and some need a particular display mode. See the
 [model notes](zdocs/users/mklinux.md).
 
 The [build notes](mklinux-selfhost/README.md) have the patches, source checksums
 and commands for rebuilding Mach and Linux in MkLinux.
+[Current status and next checks](mklinux-selfhost/STATUS.md).
 
 ## Build
 
