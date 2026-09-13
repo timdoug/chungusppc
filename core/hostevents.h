@@ -162,10 +162,6 @@ public:
     static void request_input_script();
     void load_input_script();
     void feed_input_script();
-
-    /** Keys to report as already held when the guest first reads the keyboard,
-        the way you would hold them down on a real machine while it starts. */
-    static void set_startup_keys(const std::string& key_spec);
     void post_cdrom_event(CdromImageEvent& event) {
         _cdrom_signal.emit(event);
     }
