@@ -55,6 +55,9 @@ build, installation, and cleanup commands.
   the 6100, whose AWACS lacks hardware byte swapping. Preserve unsigned stereo
   input too, and count 16-bit mono samples as `count / 2`; the original loops
   read and wrote past their buffers.
+* **Framebuffer mapping:** include the framebuffer address's page offset in
+  the mapping length. Rowbytes already includes pixel depth. The missing
+  offset caused console clears to fault at the bottom of some ATI modes.
 * **Serial:** bind each reader thread to the Mach device port it opened.
   A pending read from a closed port must not hang up a newly opened tty in
   the same slot. Respect `CLOCAL` when receiving a carrier-drop event.
