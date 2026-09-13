@@ -416,28 +416,26 @@ void PrimeTimeTwo::update_via2_irq()
     }
 }
 
-// The request towards the 603 is latched, not level-driven: the ROM's handler
-// at 0x40307358 acknowledges Capella and returns without touching the device
-// that interrupted, so a level-driven line would re-enter the handler forever.
-// A new request from any source arms the latch again.
+// Capella requests a 603 interrupt whenever the 68k priority level changes
+// away from the one the nanokernel last acknowledged - including when it falls
+// back to idle. The nanokernel's handler at 0x403158A8 acknowledges Capella,
+// reads the level from the +0x24 register and stores it as the interrupt
+// priority level of the emulated 68k; that store is the only thing that ever
+// lowers it. Asserting only on a rising edge therefore leaves the 68k believing
+// an interrupt is forever pending, and its autovector handler re-enters itself
+// as soon as each rte restores the unmasked status register.
 void PrimeTimeTwo::ack_cpu_int(uint8_t level_mask, uint8_t irq_line_state)
 {
-    if (irq_line_state) {
+    if (irq_line_state)
         this->cpu_int_lines |= level_mask;
-        if (!this->cpu_irq) {
-            this->cpu_irq = true;
-            ppc_assert_int();
-            LOG_F(9, "%s: CPU INT asserted, levels: 0x%02x", this->name.c_str(),
-                  this->cpu_int_lines);
-        }
-    } else {
+    else
         this->cpu_int_lines &= ~level_mask;
-        // The priority lines go idle once the last source deasserts. Holding
-        // the request until the next Capella acknowledge would re-enter the
-        // 68k handler on every rte, nesting exception frames until the stack
-        // runs into the heap.
-        if (!this->cpu_int_lines)
-            this->clear_cpu_int();
+
+    if (this->get_int_level() != this->acked_level && !this->cpu_irq) {
+        this->cpu_irq = true;
+        ppc_assert_int();
+        LOG_F(9, "%s: CPU INT asserted, levels: 0x%02x", this->name.c_str(),
+              this->cpu_int_lines);
     }
 }
 
@@ -452,12 +450,17 @@ uint8_t PrimeTimeTwo::get_int_level() const
     return 0;
 }
 
+// The nanokernel reads the priority level right after this acknowledge, so the
+// level captured here is the one it is about to see.
 void PrimeTimeTwo::clear_cpu_int()
 {
+    this->acked_level = this->get_int_level();
+
     if (this->cpu_irq) {
         this->cpu_irq = false;
         ppc_release_int();
-        LOG_F(9, "%s: CPU INT latch cleared", this->name.c_str());
+        LOG_F(9, "%s: CPU INT acknowledged at level %d", this->name.c_str(),
+              this->acked_level);
     }
 }
 
