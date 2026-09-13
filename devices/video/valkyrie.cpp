@@ -263,6 +263,18 @@ void ValkyrieVideo::enable_video_internal() {
         };
         this->fb_pitch = this->active_width >> 3; // one byte contains 8 pixels
         break;
+    case 2:
+        this->convert_fb_cb = [this](uint8_t* dst_buf, int dst_pitch) {
+            this->convert_frame_2bpp_indexed(dst_buf, dst_pitch);
+        };
+        this->fb_pitch = this->active_width >> 2; // one byte contains 4 pixels
+        break;
+    case 4:
+        this->convert_fb_cb = [this](uint8_t* dst_buf, int dst_pitch) {
+            this->convert_frame_4bpp_indexed(dst_buf, dst_pitch);
+        };
+        this->fb_pitch = this->active_width >> 1; // one byte contains 2 pixels
+        break;
     case 8:
         this->convert_fb_cb = [this](uint8_t* dst_buf, int dst_pitch) {
             this->convert_frame_8bpp_indexed(dst_buf, dst_pitch);
