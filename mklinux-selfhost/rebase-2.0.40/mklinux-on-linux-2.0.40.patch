@@ -150766,10 +150766,10 @@ index 00000000..e9fe3a56
 +
 diff --git a/osfmach3/sound/drivers/awacs/awacs_ops.c b/osfmach3/sound/drivers/awacs/awacs_ops.c
 new file mode 100644
-index 00000000..1a2b9f7f
+index 00000000..f187bb2a
 --- /dev/null
 +++ b/osfmach3/sound/drivers/awacs/awacs_ops.c
-@@ -0,0 +1,938 @@
+@@ -0,0 +1,942 @@
 +/*
 + *
 + *
@@ -150941,7 +150941,7 @@ index 00000000..1a2b9f7f
 +		buf16 = (unsigned short *)&unpacked_buffer[buf_index];
 +		buf_index += *count;
 +		orig_buf16 = (unsigned short *)buf;
-+		for (i = 0;  i < *count;  i++)
++		for (i = 0;  i < *count/2;  i++)
 +			buf16[(2*i)+0] = buf16[(2*i)+1] = SWAP(orig_buf16[i] ^ mask);
 +		*count *= 2;
 +	} else {
@@ -150967,14 +150967,20 @@ index 00000000..1a2b9f7f
 +		buf16 = (unsigned short *)&unpacked_buffer[buf_index];
 +		buf_index += *count;
 +		orig_buf16 = (unsigned short *)buf;
-+		for (i = 0;  i < *count;  i++)
++		for (i = 0;  i < *count/2;  i++)
 +			buf16[(2*i)+0] = buf16[(2*i)+1] = orig_buf16[i] ^ mask;
 +		*count *= 2;
 +	} else {
 +		buf16 = (unsigned short *)buf;
-+		if (mask)
++		if (mask) {
++			/* Preserve unsigned OSS fragments too when converting to signed. */
++			if ((buf_index + *count) > AWACS_BUFSIZE) buf_index = 0;
++			buf16 = (unsigned short *)&unpacked_buffer[buf_index];
++			buf_index += *count;
++			orig_buf16 = (unsigned short *)buf;
 +			for (i = 0;  i < *count/2;  i++)
-+				buf16[i] = buf16[i] ^ mask;
++				buf16[i] = orig_buf16[i] ^ mask;
++		}
 +	}
 +	return (caddr_t)buf16;
 +}
@@ -151706,8 +151712,6 @@ index 00000000..1a2b9f7f
 + 
 +	return kr;
 +} 
-+
-+
 diff --git a/osfmach3/sound/drivers/awacs/awacs_types.h b/osfmach3/sound/drivers/awacs/awacs_types.h
 new file mode 100644
 index 00000000..642650be
