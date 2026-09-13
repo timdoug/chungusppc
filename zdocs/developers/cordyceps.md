@@ -77,7 +77,8 @@ There is no interrupt controller register of the kind AMIC provides; the VIAs
 drive 68k-style autovector levels. The request towards the 603 is *latched*:
 the ROM's handler at `0x40307358` acknowledges Capella at `+0x1C` and returns
 without touching whatever interrupted, so a level-driven line re-enters the
-handler forever. The latch re-arms when a new source asserts. (MkLinux
+handler forever. The latch re-arms when a new source asserts, and the request
+also drops once the last source deasserts, as the priority lines do. (MkLinux
 acknowledges at `+0x18` instead; both addresses are accepted.)
 
 ```
@@ -119,6 +120,15 @@ The ROM is far more talkative than it looks, which makes bring-up tractable.
   | `0x00000040` | `0x403050a4` | `0x10000000` | `0x40305770` |
   | `0x00000100` | `0x40305170` | `0x00000400` | `0x403051bc` |
 
+* **The 68k side is reachable too.** The emulator keeps the 68k PC in `r24`,
+  the current opcode in `r27`, A7 in `r1`, and its context block at `r31` =
+  `0x68FFF000` (A7 at `+0x4C`). Nanokernel services are `twi 31, r31, N`
+  instructions in the table at `0x6806E680`. The 68k ROM is mapped at
+  `0x40800000`, so 68k code seen at `0x408xxxxx` disassembles with
+  `context 68k` and `disas N,0x400xxxxx` — the debugger reads physical
+  addresses, and the ROM sits at `0x40000000`. The VIA interrupt dispatchers
+  are at ROM `0x1C2F4` (VIA1, through low-memory global `0x1D4`) and `0x1C314`
+  (VIA2, through `0xCEC`).
 * **The nanokernel panic routine is at `0x40310D40`.** It saves the FPRs, then
   spins forever incrementing a counter at address 0 (`0x40310DD0`). Breaking
   there with `until 0x40310d40` and reading `lr`, `srr0` and `srr1` identifies
@@ -146,10 +156,20 @@ and can be pointed elsewhere with the `machine_id` property.
 
 POST passes, the 68k emulator runs, and the ROM programs Valkyrie for 640x480
 at 4 bpp and 66.6 Hz and fills the frame buffer with the 50% desktop dither.
-The screen is still black: the ROM has only loaded two CLUT entries by then,
-at indices 127 and 255, and nothing has coloured the pixel values actually on
-screen. With no boot device attached the ROM keeps running without reaching a
-boot screen, so that is the next thing to chase.
+It then settles into a stable idle: sampling the 68k PC finds it almost
+entirely in the VIA dispatcher and the VBL stack sniffer, A7 holds steady
+around `0x3F5FA8` so nothing is leaking exception frames, and only the 60 Hz
+tick asserts an interrupt. The main thread never gets further — no boot icon
+is drawn (the frame buffer centre stays pure dither), no SCSI or IDE probing
+happens, and only two CLUT entries are ever loaded, which is why the screen
+shows black rather than grey.
+
+For comparison, `pm6400` on the same emulator reaches the boot-wait loop
+within seconds and draws the grey desktop, the blinking disk icon and the
+cursor, idling at 68k PCs in RAM rather than in ROM interrupt handlers. Making
+the 5200/6200 get that far is the next job; disassembling the ROM around the
+startup sequence with Ghidra would probably beat poking at it one routine at
+a time.
 
 Everything below is still a considered guess:
 
