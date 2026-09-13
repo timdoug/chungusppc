@@ -92,6 +92,7 @@ uint32_t ValkyrieVideo::read(uint32_t rgn_start, uint32_t offset, int size) {
     case Valkyrie::csr_id_reset:
         return this->chip_id;
     case Valkyrie::csr_int_stat:
+    case Valkyrie::csr_int_flags:
         return this->int_latch;
     case Valkyrie::csr_monid:
         return this->mon_id;
