@@ -68,6 +68,8 @@ void EventManager::set_keyboard_locale(uint32_t keyboard_id) {
 //     text  hello world     type these characters
 //     key   RETURN          press a named key
 //     key   Shift+SLASH     press with modifiers held
+//     hold  Shift           press and leave held
+//     release Shift         let go again
 //     mouse to 120 48       put the pointer at these screen coordinates
 //     mouse by -10 0        move the pointer relative to where it is
 //     mouse click           click the left button, or right / middle
@@ -302,6 +304,28 @@ void EventManager::load_input_script() {
             for (auto it = mods.rbegin(); it != mods.rend(); ++it)
                 this->queue_key(*it, false);
             queued++;
+        } else if (verb == "hold" || verb == "release") {
+            // Press keys and leave them that way, for the things a Mac decides
+            // from what is held at a particular moment - Shift as the Finder
+            // starts skips the Startup Items without disabling extensions,
+            // which holding it from power-on would also do.
+            std::string spec;
+            ls >> spec;
+            bool down = verb == "hold";
+            while (!spec.empty()) {
+                size_t plus = spec.find('+');
+                std::string name = spec.substr(0, plus);
+                spec = (plus == std::string::npos) ? "" : spec.substr(plus + 1);
+                AdbKey key;
+                if (name.empty())
+                    continue;
+                if (name_to_key(name, &key)) {
+                    this->queue_key(key, down);
+                    queued++;
+                } else {
+                    LOG_F(WARNING, "input: unknown key \"%s\"", name.c_str());
+                }
+            }
         } else if (verb == "floppy") {
             InputAction action{};
             action.kind = InputAction::Kind::Floppy;
