@@ -238,14 +238,37 @@ Two things to know before trying it:
   `hdd2_config` moves it elsewhere.
 
 `hdd_img` used to be attached to the SCSI bus as well as the IDE one, because
-the property is global and both `AtaHardDisk` and `ScsiBus` read it. The ROM
-would find the second copy at SCSI ID 0, select it, and stall with the sequencer
-parked in `RCV_DATA`, a full FIFO and the driver polling the 53C94 status
-register - with no DMA channel nothing tells the processor to drain the FIFO
-through the handshake port at `0x50F10100`. `ScsiBus` now leaves `hdd_img` alone
-on any machine that has an IDE hard disk. The pseudo-DMA receive path is still
-unfinished, so a SCSI CD-ROM will hit the same stall; asserting DRQ from
-`rcv_data()` is not enough, the driver is not watching that bit.
+the property is global and both `AtaHardDisk` and `ScsiBus` read it, so the ROM
+found a second copy of the disk at SCSI ID 0. `ScsiBus` now leaves `hdd_img`
+alone on any machine that has an IDE hard disk.
+
+## SCSI
+
+The processor moves SCSI data itself through the handshake port at
+`0x50F10100`, and the ROM's driver will not touch that port until the 53C94
+reports terminal count:
+
+```
+@loop:
+  btst #4,(0x40,a3)    ; Status bit 4, terminal count
+  bne.s @drain
+  bsr.w <poll for the interrupt bit>
+  and.b (0x40,a3),d5
+  cmpi.b #1,d5         ; still DATA_IN, keep waiting
+  beq.s @loop
+@drain:
+  btst #4,(0x70,a3)    ; FIFO Flags bit 4, sixteen bytes available
+  beq.s @loop
+  move.w (a1),(a2)+    ; read the handshake port
+```
+
+The transfer counter follows the SCSI bus, not the port the processor collects
+from, so it reaches zero when the bus side finishes - which for a transfer that
+fits in the sixteen byte FIFO is as soon as the FIFO is full. Setting the bit
+only in response to a read through the handshake port, as the DMA path does,
+deadlocks: the driver waits for terminal count and terminal count waits for the
+driver. `rcv_data()` now sets it when the bus side completes, for machines with
+no DMA channel only.
 
 ## MkLinux
 
