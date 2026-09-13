@@ -121,11 +121,11 @@ checked at 640×480 in 256, Thousands and Millions of colors, including text,
 icons, depth changes and window movement/repainting. See the
 [GX implementation notes](../developers/atimach64gx.md) for remaining limits.
 
-For MkLinux, use 832×624 in 256 colors with the fixed-frequency 16-inch monitor:
+For MkLinux, 640×480 in 256 colors works with the rebuilt Linux server:
 
 ```
 chungusppc -r -m pm9500 -b "9630C68B - Power Mac 7200&7500&8500&9500 v2.ROM" \
-    --rambank1_size 128 --mon_id=MacRGB16in --pci_A1=AtiMach64Gx \
+    --rambank1_size 128 --mon_id=VGA-SVGA --pci_A1=AtiMach64Gx \
     --hdd_img "universal-macos.img:mklinux.img" \
     --cdr_img "MkLinux R2 RC5.toast" --cdr_img2 "MkLinux R2 RC5.toast" \
     --enet_backend=slirp --enet_hostfwd=tcp:2324:23
@@ -136,12 +136,12 @@ directory. Use private copies of the universal Mac OS and MkLinux disks; the
 disk order and `rootdev=/dev/sdb2` are unchanged. Start without `--realtime`.
 
 At 640×480 in 256 colors, the tested driver supplies framebuffer address
-`0x81800200`. The existing Linux console mapping omits that address's page
-offset, so clearing the end of the framebuffer crosses the mapping and faults.
-832×624 leaves enough padding in the final mapped page for this offset. This
-is a video-mode workaround for the retained guest binaries, separate from the
-GX emulator fixes; other MkLinux resolutions and direct-color modes remain
-unvalidated.
+`0x81800200`. Linux now includes the address's page offset when rounding the
+mapping length, so clearing the last part of the screen stays within the
+mapping. The rebuilt server passed a color console and Xpmac/GNOME at 640×480
+with 8-bit, RGB555 and 32-bit pixels (X depths 8, 15 and 24), including
+terminal colors, scrolling and console/X switching. The previous
+832×624 workaround (`--mon_id=MacRGB16in`) still works.
 
 Xpmac/GNOME also passed on the 9500 with the `-104` GX card ROM at 832×624 in
 256 colors. Run `startx` from the console. Keyboard input, colored terminal
@@ -182,7 +182,7 @@ checksum `9FEB69B3` (file CRC32 `a43fadbc`). The newer install disc used here is
 
 ```
 chungusppc -r -m pm6100 -b "9FEB69B3 - Power Mac 6100 & 7100 & 8100.ROM" \
-    --rambank1_size 64 --rambank2_size 64 --mon_id=VGA-SVGA \
+    --rambank1_size 32 --rambank2_size 32 --mon_id=VGA-SVGA \
     --hdd_img "universal-macos.img:mklinux.img" \
     --cdr_img "MkLinux R2 RC5.toast" \
     --enet_backend=slirp --enet_hostfwd=tcp:2324:23
@@ -194,6 +194,18 @@ choose **Custom Install → Universal system for any supported computer** in the
 Mach kernel into its System Folder as described below.
 
 Use `-m pm7100` or `-m pm8100` in the same command to test those models.
+On the 7100 and 8100, expansion banks accept 1, 2, 4, 8, 16 or 32 MiB each;
+0 leaves a bank empty. The 7100 exposes four banks (136 MiB total with onboard
+RAM), and the 8100 eight (264 MiB). Add `--rambank3_size 32` and
+`--rambank4_size 32` for the 136 MiB configuration tested on the 8100.
+
+The 7100/8100 RAM map follows Apple's
+[Enhanced Power Macintosh developer note, Appendix A](https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-PPC_Desktop/Enhanced_Power_Macintosh.pdf).
+Their previous bank A mirror made Mac OS advertise overlapping storage as
+independent RAM. Mach could boot, but larger allocations corrupted live pages.
+The 6100 ROM uses a different sizing path and programs HMC's compact matrix;
+it retains that mapping and its two RAM-bank settings.
+
 Start all three **without `--realtime`**. Their ROM measures CPU speed to select a
 Mac model. With host elapsed time, a fast emulator can measure above the ROM's
 100 MHz limit and select an unsupported model, causing 7.6.1 to reject even a
@@ -209,6 +221,16 @@ during its SCSI scan. `--hdd_img2` and `--cdr_img2` attach to this controller,
 which MkLinux enumerates as bus 0; the usual `--hdd_img` and `--cdr_img` are on
 bus 1. Keep the second bus's hard-disk list empty to retain `/dev/sdb2` with the
 disk order above. A CD on the second bus works with `--cdr_img2`.
+
+Moving both hard disks together to `--hdd_img2` also preserves `/dev/sdb2`. That configuration passed a 16 MiB
+filesystem write, host-image checksum comparison and cold-boot verification;
+CD reads on both controllers matched the ISO. AMIC SCSI DMA also splits
+buffers at host RAM allocation boundaries; a CD read on the 6100 exposed a
+buffer spanning motherboard and expansion RAM. The corrected 6100 run passed
+the CD checksum and retained its 16 MiB disk payload. The 7100 also passed
+the disk and CD checks with 136 MiB. The 7500's MESH path passed the
+same disk persistence test. Host tests exercise NCR53C94/AMIC transfers split
+into 8-byte, 4 KiB and 64 KiB DMA fragments in both directions.
 
 These models also rely on the earlier fixes for cyclic timer phase preservation,
 AWACS codec busy-bit readback, and AMIC native interrupt delivery. The same
@@ -226,10 +248,10 @@ The 7100/8100 validation covered booting the rebuilt kernels, DHCP, DNS, ping,
 telnet, checksum-verified 2 MiB Ethernet transfers in both directions, disk
 persistence across shutdown/startup or reboot, CD reads, and clean shutdown.
 Both also completed a guest-initiated reboot with Samba and AppleTalk enabled.
-The 8100's second SCSI bus passed a separate 4 MiB CD checksum comparison;
-hard-disk writes on that bus remain untested. NuBus cards, floppy I/O and audio
-playback are outside this 7100/8100 pass. The 6100 was rechecked for boot and
-Ethernet; its [audio](#audio) and [floppy](#floppy-io) checks are described below.
+The 8100 also passed the expanded audio test and both serial ports. NuBus
+cards and model-specific 7100/8100 floppy checks remain untested; the same
+AMIC floppy controller was verified on the 6100. See [audio](#audio),
+[floppy](#floppy-io) and [serial](#serial-ports) below.
 
 The 6100's built-in video also passed Xpmac/GNOME at 640×480 in 256 colors,
 started with `startx` from the console. Checks covered keyboard input, colored
@@ -278,8 +300,10 @@ The 6400 also passed Xpmac/GNOME at 640×480 with 16-bit pixels, started with
 and scrolling, overlapping windows, dragging and repainting, `chvt` between
 console VT 1 and X on VT 7, and exiting X back to a working color console.
 The guest shut down cleanly. No additional emulator or guest changes were
-needed. X remains untested on the 5400. Audio playback and floppy I/O remain
-untested; the 6400 desktop run logged audio DMA errors. See [IDE boot](#ide-boot)
+needed. X remains untested on the 5400. Both Alchemy models also passed signed
+16-bit stereo playback in both byte orders at 44.1 and 22.05 kHz, and
+ext2 floppy reads and writes, with the written files checked from the
+host image after shutdown. See [IDE boot](#ide-boot)
 below for the single-disk configuration.
 
 The [6400 specifications](https://support.apple.com/en-ca/112092) list two PCI
@@ -308,13 +332,12 @@ Use `-m pm5500` or `-m tam` for the other Gazelle models. As on the 6400, these
 attachments use MESH SCSI and preserve `rootdev=/dev/sdb2`; a separate scratch
 disk in `--hdd_img` appears as IDE `/dev/hda`. Start without `--realtime`.
 
-Before booting MkLinux, select **Thousands** in the Mac OS **Monitors** control
-panel and restart. At 640×480 in 256 colors, this ROM supplies framebuffer
-address `0x81800480`. The retained Linux console code maps the pixel bytes but
-does not include that page offset, and faults clearing the last part of the
-screen. Thousands works with the existing binaries. This is a tested video-mode
-workaround; it does not establish that all real Gazelle machines failed in
-256-color mode. No guest kernel patch is included for it.
+The verified MkLinux mode is **Thousands** at 640×480, selected in the Mac OS
+**Monitors** control panel. In 256 colors this ROM supplies framebuffer
+address `0x81800480`; the old Linux mapping omitted the page offset and faulted
+clearing the bottom of the screen. The retained Linux patch now includes that
+offset and passes all three tested depths on the 9500. The 6500's 256-color
+console and X checks are still pending, so Thousands remains its verified mode.
 
 The emulator must retain Gazelle's `pci_F1=AtiRageGT` board default when
 registering generic PCI-host settings. It also needs MESH PIO writes to drain
@@ -525,8 +548,15 @@ it twice. The same Linux server works on all three machines.
 
 The 6500 also completed guest shutdown and host audio cleanup without a crash.
 
-Recording, other sample formats, mixer volume and input selection are not
-verified. The existing input backend supplies synthetic data; it does not
+The expanded test passed all 24 combinations on the 7500 and 8100: mono/stereo,
+44.1/22.05 kHz, signed and unsigned 8-bit samples, and signed and unsigned
+16-bit samples in both byte orders. Each case repeats playback after a pause.
+Linux's AWACS converter needed two further fixes: the mono 16-bit loops counted
+bytes as samples, and unsigned stereo conversion modified the input buffer.
+The corrected converters pass buffer-boundary and input-preservation checks
+under AddressSanitizer and UndefinedBehaviorSanitizer.
+
+Recording, mixer volume and input selection are not verified. The existing input backend supplies synthetic data; it does not
 capture a host microphone.
 
 ## Floppy I/O
@@ -557,8 +587,67 @@ from the host image. These are representative controller tests, not separate
 audio/floppy checks on every model selector. Host tests also cover 720 KiB
 images, write protection, incomplete transfers and interrupt masking.
 
-Mach's floppy driver prints `HALISR` and `HALGetNextAddr` diagnostics during
-I/O; the console becomes quiet when the transfer completes.
+The 6400 and 5400 also passed ext2 floppy reads and writes, with the written
+files verified from the host image after unmounting.
+
+The rebuilt Mach kernel disables the stock driver's per-transfer `HALISR`,
+`HALGetNextAddr` and `DMASTATUS` debug prints in production builds. Floppy
+error reporting remains compiled in. This kernel built successfully and booted
+the 5400 to a root shell; floppy I/O with this particular rebuild is still
+pending. The filesystem checks above used the previous Mach build.
+
+## Serial ports
+
+On macOS and Linux hosts, enable Unix sockets for the modem and printer ports:
+
+```sh
+--serial_backend=socket --serial_b_backend=socket
+```
+
+The sockets are `chungussocket` (MkLinux `/dev/ttyS0`) and `chungussocket-b`
+(`/dev/ttyS1`) in the emulator's working directory. Connect interactively with:
+
+```sh
+python3 tools/chungusppc-serial.py /path/to/chungussocket
+```
+
+Ctrl-] disconnects. For an R2 serial login, add this line to `/etc/inittab`
+and run `init q`:
+
+```text
+S0:2345:respawn:/sbin/getty -h ttyS0 DT19200 vt100
+```
+
+R2's `getty_ps` uses the `DT19200` entry in `/etc/gettydefs`. Add `ttyS0` to
+`/etc/securetty` if root should be allowed to log in there. The 7500 passed
+login, shell commands, logout and reconnection with the rebuilt server; the
+8100 also passed serial login through AMIC.
+
+For a binary test, stop getty on the port, compile
+[`mklinux-serial-test.c`](../../tools/mklinux-serial-test.c) in the guest, and
+connect the host peer before running the guest program:
+
+```sh
+python3 tools/chungusppc-serial-test.py /path/to/chungussocket-b
+```
+
+```sh
+gcc -O2 -Wall -o serial-test mklinux-serial-test.c
+./serial-test /dev/ttyS1
+```
+
+The test rapidly closes and reopens the tty, then checks 16 KiB in both
+directions at 38,400 baud. Both ports passed 4 KiB transfers on the 7500;
+its printer port also passed the larger reopen test. Both ports passed the
+16 KiB reopen test on the 8100 through AMIC DMA. The Linux serial fix
+prevents a read reply from a closed port hanging up the next opener.
+
+The 5400 and 9500 also passed serial login. PPP traffic and LocalTalk have not
+been verified. The old guest `strace` produced `ptrace: umoven: Input/output
+error` messages during investigation; stopping that trace removed the noise.
+
+See the [current build status and next checks](../../mklinux-selfhost/STATUS.md)
+for the remaining work and the local test-image setup.
 
 ## MkLinux R2
 
