@@ -902,6 +902,7 @@ int Sc53C94::xfer_to(DmaChannel *ch_obj, uint8_t *buf, int len) {
 
 static const PropMap Sc53C94_properties = {
     {"hdd_img", new StrProperty("")},
+    {"scsi_hdd_img", new StrProperty("")},
     {"cdr_img", new StrProperty("")},
 };
 
@@ -922,7 +923,8 @@ static const DeviceDescription ScsiCurio2_Descriptor = {
 };
 static const DeviceDescription Sc53C94_2_Descriptor = {
     Sc53C94::create_secondary, {"ScsiCurio2"},
-    {{"hdd_img2", new StrProperty("")}, {"cdr_img2", new StrProperty("")}},
+    {{"hdd_img2", new StrProperty("")}, {"scsi_hdd_img2", new StrProperty("")},
+     {"cdr_img2", new StrProperty("")}},
     HWCompType::SCSI_HOST | HWCompType::SCSI_DEV
 };
 REGISTER_DEVICE(ScsiCurio2, ScsiCurio2_Descriptor);

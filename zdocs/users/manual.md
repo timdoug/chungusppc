@@ -322,6 +322,10 @@ booting. A SCSI CD-ROM does not work yet.
 
 A second IDE disk can be attached to any machine with `--hdd2_img`, which puts
 it on `Ide0:1`; `--hdd2_config` moves it to another bus or unit.
+
+`--scsi_hdd_img` attaches hard disks to the SCSI bus, colon separated for more
+than one, and is the way to put a disk there on a machine whose `hdd_img`
+belongs to the IDE bus.
 See the [Cordyceps notes](../developers/cordyceps.md) for the address map and
 for the guesses that a full boot would confirm or disprove.
 

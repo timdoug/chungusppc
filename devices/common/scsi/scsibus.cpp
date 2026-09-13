@@ -321,6 +321,16 @@ void ScsiBus::attach_scsi_devices(const std::string bus_suffix)
         gMachineObj->get_comp_by_name_optional("AtaHardDisk") != nullptr;
 
     image_path = ide_owns_hdd_img ? "" : GET_STR_PROP("hdd_img" + bus_suffix);
+
+    // A machine whose hdd_img belongs to the IDE bus can still be given SCSI
+    // disks, and one with both buses may want disks on each.
+    // Not every machine or test that builds a SCSI bus declares this one.
+    std::string scsi_only;
+    if (gMachineSettings.count("scsi_hdd_img" + bus_suffix))
+        scsi_only = GET_STR_PROP("scsi_hdd_img" + bus_suffix);
+    if (!scsi_only.empty())
+        image_path = image_path.empty() ? scsi_only : image_path + ":" + scsi_only;
+
     if (!image_path.empty()) {
         std::istringstream image_stream(image_path);
         while (std::getline(image_stream, path, ':')) {
@@ -337,6 +347,8 @@ void ScsiBus::attach_scsi_devices(const std::string bus_suffix)
                                         std::unique_ptr<ScsiHardDisk>(scsi_device));
                 this->register_device(scsi_id, scsi_device);
                 scsi_device->insert_image(path);
+                LOG_F(INFO, "%s: hard disk \"%s\" attached at ID %d",
+                      this->get_name().c_str(), path.c_str(), scsi_id);
             }
             else {
                 LOG_F(ERROR, "%s: Too many devices. HDD \"%s\" was not added.",
