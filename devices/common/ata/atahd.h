@@ -42,11 +42,17 @@ constexpr auto CHS_LIMIT = 267386880;
 class AtaHardDisk : public AtaBaseDevice
 {
 public:
-    AtaHardDisk(std::string name);
+    AtaHardDisk(std::string name, bool secondary = false);
     ~AtaHardDisk() = default;
 
     static std::unique_ptr<HWComponent> create() {
         return std::unique_ptr<AtaHardDisk>(new AtaHardDisk("ATA-HD"));
+    }
+
+    // A second disk on the IDE bus, configured with its own properties so it
+    // can be the slave of the first channel or the master of the second.
+    static std::unique_ptr<HWComponent> create_second() {
+        return std::unique_ptr<AtaHardDisk>(new AtaHardDisk("ATA-HD2", true));
     }
 
     int device_postinit() override;
@@ -60,6 +66,7 @@ protected:
     void        calc_chs_params();
 
 private:
+    bool        secondary = false;
     ImgFile     hdd_img;
     uint64_t    img_size = 0;
     uint32_t    total_sectors = 0;
