@@ -250,6 +250,15 @@ uint32_t PrimeTimeTwo::f108_read(uint32_t offset)
 
 void PrimeTimeTwo::f108_write(uint32_t offset, uint8_t value)
 {
+    // MkLinux's drive interrupt handler writes the source's bit here and then
+    // zero, which is how it dismisses the interrupt: nothing else ever clears
+    // the flag, and leaving it set holds the F108's output down for good.
+    if ((offset & 0xFFF) == 0x100) {
+        this->f108_ifr &= ~value;
+        this->update_f108_irq();
+        return;
+    }
+
     if ((offset & 0xFFF) == 0x101) {
         // bits 0-1 are enables; writing "1" to bits 2-7 clears that flag
         this->f108_ifr = (this->f108_ifr & ~(value & ~F108_INT_ENABLE)) |
