@@ -9,9 +9,8 @@ which roads are already known to be dead ends.
 `pm5200` and `pm6200` boot the ROM to the Mac OS "insert disk" screen with a
 working mouse, boot Mac OS from an IDE image, hand over through the MkLinux
 booter, and reach a **MkLinux DR3 login prompt in about two minutes**, in
-colour, with the keyboard working. What is left is speed: MkLinux's SCSI driver
-spins hard enough that anything I/O bound - a forced `fsck`, an install - does
-not finish.
+colour, with the keyboard working. Nothing is known to be broken; what is left
+is speed.
 
 **Run the Performa kernel.** Everything above depends on it - see
 [Which kernel](#which-kernel).
@@ -96,34 +95,24 @@ Machine-specific, all of it needed before the drive interrupt reached MkLinux:
 | `155f6988` | Writing a bit to `0x50F1A100` dismisses that F108 flag, which is how MkLinux's handler does it. |
 | `ce469db0` | The Valkyrie palette answers at `+8` as well as `+4`, which is where MkLinux writes it. |
 
-## The blocker
+## Where it stands
 
-Speed. MkLinux's SCSI driver issues around half a million `CLEAR_FIFO` commands
-a second from `0x002C8128`, inside a retry loop at `0x002C88DC`-`0x002C8984`
-that spins on a counter at `+0x28` of its transfer descriptor. Booting a clean
-filesystem still takes two minutes, but a forced `fsck` never finishes, so the
-machine cannot currently be installed to or used for real work.
-
-Gatwood's README does say `SCSI is working, but rather slow... partially a lack
-of pseudo-DMA code`, so some of this is the port. Half a million commands a
-second is worth confirming against that expectation before accepting it: the
-worker the loop calls is at `0x002C9908`, and it reports progress by storing
-the descriptor's remaining count through the pointer in `r6`.
-
-Two other things are known wrong and are not in the way of a boot:
-
-* **The ATAPI probe uses the wrong register spacing** - MkLinux's ATAPI
-  accessors pick four byte spacing only for `POWERMAC_CLASS_POWERBOOK`, so on a
-  Performa they write Device/Head to `0x50F1A060` and commands to `0x50F1A070`,
-  which nothing decodes. The disassembly is in
-  [cordyceps.md](cordyceps.md#where-the-performa-kernel-gets-to). The IDE disk
-  is not usable from MkLinux.
-* **Sound is not supported by the port at all**, per its own README.
+Nothing is known to be broken. What is left is speed: this machine manages
+about **150 KB/s** over SCSI where a 6100 over AMIC DMA manages **6.9 MB/s**.
+MkLinux moves every byte through the FIFO register with roughly three chip
+commands each, having no pseudo-DMA path, which is what its own README means by
+`SCSI is working, but rather slow... partially a lack of pseudo-DMA code`. A
+clean boot takes about two minutes; anything heavier is correspondingly slow.
 
 If the guest's root filesystem is left dirty - which killing the emulator does -
-every subsequent boot forces an `fsck` that will not finish. Clearing
-`s_state` to 1 in the ext2 superblock, 1024 bytes into the `Apple_UNIX_SVR2`
-partition, gets back to a bootable disk.
+the next boot forces an `fsck` that takes far longer than the boot. The host's
+`e2fsck` will repair it in place through the offset syntax:
+
+```
+e2fsck -fy 'mklinux.img?offset=32768'
+```
+
+where `32768` is the `Apple_UNIX_SVR2` partition's start block times 512.
 
 ## Do not repeat these
 
@@ -142,6 +131,16 @@ partition, gets back to a bootable disk.
   watching that bit; it waits on terminal count in the status register.
 * **Screenshots taken before `05e0344f` are worthless.** Every one of them is
   uniformly black on every machine.
+* **Do not patch the guest kernel.** This one is known to have booted a real
+  6214, so anything it does that looks wrong is worth understanding rather than
+  editing - twice now the answer has been a bug on our side. Its ATAPI probe
+  writing to `0x50F1A060`/`0x50F1A070`, which nothing decodes, is the current
+  example: harmless, and harmless on real hardware too. (The `valkyrie_probe`
+  patch is the exception that proves it: that one is only for kernels built
+  from sources older than the port itself.)
+* **Do not make a non-DMA SCSI `TRANSFER` fill the FIFO.** It triples this
+  machine's throughput and stops the 6100 booting at all - Mac OS's SCSI
+  Manager depends on getting exactly one byte per non-DMA transfer.
 * **`mach_options=-r` does not give you a serial console.** The option reaches
   the kernel - the booter's dialog shows `Mach Options: -r`, and you set it by
   adding that line to `lilo.conf`, which the MkLinux control panel edits under
