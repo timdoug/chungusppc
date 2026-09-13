@@ -313,7 +313,14 @@ void ScsiBus::attach_scsi_devices(const std::string bus_suffix)
     int scsi_id;
     std::string image_path;
 
-    image_path = GET_STR_PROP("hdd_img" + bus_suffix);
+    // On a machine with an IDE hard disk, hdd_img is that disk: hdd_config says
+    // which bus and unit it goes to. Attaching it here as well would present the
+    // same image twice, once per bus, which is at best confusing and on the
+    // 5200/6200 wedges the ROM before it can boot from either.
+    bool ide_owns_hdd_img = bus_suffix.empty() &&
+        gMachineObj->get_comp_by_name_optional("AtaHardDisk") != nullptr;
+
+    image_path = ide_owns_hdd_img ? "" : GET_STR_PROP("hdd_img" + bus_suffix);
     if (!image_path.empty()) {
         std::istringstream image_stream(image_path);
         while (std::getline(image_stream, path, ':')) {
