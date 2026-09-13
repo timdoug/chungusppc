@@ -49,6 +49,10 @@ namespace Valkyrie {
         csr_id_reset    = 0x02, // LinuxPPC driver source calls it csr_stat
         csr_subsys_cfg  = 0x03, // subsystem config
         csr_int_stat    = 0x04, // interrupt status
+        // The ROM's "wait for vertical blanking" routine clears the latch by
+        // writing to csr_int_stat, then spins on bit 0 of this register until
+        // the next blanking interval sets it again.
+        csr_int_flags   = 0x05, // interrupt status, read only
         csr_int_en      = 0x06, // interrupt enable
         csr_monid       = 0x07, // monitor sense
     };
