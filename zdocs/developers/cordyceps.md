@@ -1,0 +1,152 @@
+# Cordyceps (Power Macintosh 5200/6200)
+
+The Power Macintosh and Performa 5200, 5300, 6200 and 6300 share one logic
+board: a Quadra/LC 630 design with a PowerPC 603 grafted on. There is no NuBus,
+no PCI and no DMA engine — the processor moves all I/O data itself. The ROM
+identifies itself as `Boot Cordyceps 6` (checksum `0x63abfd3f`), which is where
+the name used here comes from.
+
+Two sources describe this hardware:
+
+* the *Power Macintosh 5200/75 LC and 6200/75 Computers* developer note
+  (Apple, 1995), for the block diagram, chip roles and address map;
+* MkLinux's Mach kernel, which carries a `POWERMAC_CLASS_PERFORMA` port in
+  `ppc/POWERMAC/powermac_performa.h`, `interrupt_performa.c` and the
+  `CLASS_PERFORMA` branches of `wd.c`, `scsi_53C94_hdw.c`, `serial_io.c`,
+  `cuda.c`, `video_valkyrie.c` and `floppy/grcswimiiihal.c`. This is the only
+  register-level description of the machine we have. It is compiled into the
+  shipped R2 kernels, but Apple never validated it: `go.c` prints
+  `Power Macintosh Performa (unsupported) class machine`, and the family is
+  absent from the DR3 release notes' machine list.
+
+## Custom ICs
+
+| IC | Role | Emulated by |
+| --- | --- | --- |
+| Capella | Bridges the 64-bit 603 bus to the 32-bit 68040 bus; L2 and ROM control | `F108` (register window only) |
+| F108 | Memory control, plus SCSI (53C96-alike), SCC (8530-alike) and IDE | `F108` + `PrimeTimeTwo` decode |
+| PrimeTime II | I/O bus bridge: VIA1, VIA2, SWIM II, interrupts, sound buffers | `PrimeTimeTwo` |
+| DFAC II | Sound codec on the IIC bus | not emulated |
+| Cuda | ADB, PRAM, real-time clock, soft power, IIC master | `ViaCuda` |
+| Valkyrie | Display CLUT and DAC, 1 MB DRAM frame buffer, 4/8/16 bpp | `ValkyrieVideo` |
+
+## Address map
+
+RAM starts at zero as one contiguous block (8 to 64 MB across two 72-pin
+SIMMs; nothing is soldered on the board). The 4 MB ROM lives on the ROM/cache
+DIMM together with a 256 KB L2 cache.
+
+| Range | Contents |
+| --- | --- |
+| `0x00000000` | RAM |
+| `0x40000000` | 603 ROM space |
+| `0x50F00000` | I/O page, decoded by PrimeTime II |
+| `0x53000000` | Capella registers (`+0x18` acknowledges interrupts) |
+| `0xF9000000` | display RAM |
+| `0xFE000000` | PDS expansion card (NuBus slot `$E`) |
+| `0xFFC00000` | ROM image the 603 starts from |
+
+Within the I/O page:
+
+| Offset | Device | Register stride |
+| --- | --- | --- |
+| `0x00000` | VIA1 (Cuda) | `0x200` |
+| `0x02000` | VIA2 | `0x200` |
+| `0x0C000` | SCC (channel B regs `+0`, A regs `+2`, B data `+4`, A data `+6`) | 2 |
+| `0x10000` | SCSI 53C96; pseudo-DMA port at `+0x100` | 16 |
+| `0x14000` | Apple Sound Chip: FIFO A `+0`, FIFO B `+0x400`, control `+0x800` | 1 |
+| `0x16000` | SWIM II | `0x200` |
+| `0x1A000` | IDE channel 0 (alternate status at `+0x38`) | 4 |
+| `0x1A101` | F108 interrupt flags | — |
+| `0x24000` | Valkyrie CLUT |  |
+| `0x2A000` | Valkyrie control registers |  |
+
+The same devices also answer at the raw `0x50000000` decode. The ROM's serial
+output routine at `0x403079C4` drives the SCC through `0x5000C000`, which is
+what MkLinux's "Really, it's 5000C000" comment refers to.
+
+Capella's window carries more than the interrupt registers. The ROM's power-on
+test at `0x403089CC` enables a mode through `+0x0C` and then walks the 256 KB
+L2 cache on the ROM/cache DIMM through two diagnostic windows, `0x51000000`
+(data, `0x3E800` bytes) and `0x52000000` (tags). Backing both with plain
+storage passes the test; the emulator has no caches to keep coherent.
+
+## Interrupts
+
+There is no interrupt controller register of the kind AMIC provides; the VIAs
+drive 68k-style autovector levels. The request towards the 603 is *latched*:
+the ROM's handler at `0x40307358` acknowledges Capella at `+0x1C` and returns
+without touching whatever interrupted, so a level-driven line re-enters the
+handler forever. The latch re-arms when a new source asserts. (MkLinux
+acknowledges at `+0x18` instead; both addresses are accepted.)
+
+```
+IDE0/IDE1, VBL -> F108 IFR -> VIA2 slot IFR bit 0 -> VIA2 IFR bit 1 -> level 2
+SCSI, sound, floppy ------------------------------> VIA2 IFR --------> level 2
+Cuda, 60.15 Hz tick, timers ----------------------> VIA1 ------------> level 1
+SCC ---------------------------------------------------------------> level 4
+```
+
+The VIA2 slot flags use reverse logic (0 means asserted); the F108 flags are
+cleared by writing a 1.
+
+## Debugging the ROM
+
+The ROM is far more talkative than it looks, which makes bring-up tractable.
+
+* **It has a serial monitor.** On a power-on self test failure it prints
+  `\r\n>` on the modem port and waits for a command (`?` prints help). Run with
+  `--serial_backend=stdio` to see it. Reaching this prompt means a POST
+  subtest failed, not that the emulator crashed.
+* **It records which test failed.** Each subtest is a `bl` followed by
+  `and. r3, r14, r14`; a non-zero `r14` means failure, and the dispatcher at
+  `0x40305080`-`0x40305340` ORs a bit into the word at physical `0x0004002C`
+  before branching to the monitor. Dump that word to see how far POST got:
+
+  | Flag | Set at | Flag | Set at |
+  | --- | --- | --- | --- |
+  | `0x00000002` | `0x40305754` | `0x00000800` | `0x403051ec` |
+  | `0x00000008` | `0x40305738` | `0x00001000` | `0x40305280` |
+  | `0x00000010` | `0x403050dc` | `0x00020000` | `0x403052b0` |
+  | `0x00000020` | `0x40305124` | `0x08000000` | `0x4030521c` |
+  | `0x00000040` | `0x403050a4` | `0x10000000` | `0x40305770` |
+  | `0x00000100` | `0x40305170` | `0x00000400` | `0x403051bc` |
+
+* **The nanokernel panic routine is at `0x40310D40`.** It saves the FPRs, then
+  spins forever incrementing a counter at address 0 (`0x40310DD0`). Breaking
+  there with `until 0x40310d40` and reading `lr`, `srr0` and `srr1` identifies
+  what died: `srr1` bit 14 set means the 68k emulator executed a trap
+  instruction.
+
+## Status and unverified guesses
+
+The ROM currently gets through the startup chime, RAM sizing, Cuda
+communication and the rest of POST, then the 68k emulator traps at virtual
+`0x6806D35C` and the nanokernel halts, before any video is programmed. That
+trap is the next thing to chase; it happens for every `machine_id` tried.
+
+Everything below is still a considered guess:
+
+* **The machine ID.** `NubusMacID` is mapped at `0x5FFFFFFC` as on the NuBus
+  Power Macs, and the ROM does read it — twice as a word and once as the low
+  byte, just before RAM sizing. MkLinux only tells us the low byte is
+  `0x50`/`0x58` on 75 MHz models and `0x51`/`0x59` on 80 MHz ones. `0x3050`,
+  `0x3058`, `0x3051` and `0x3010` all reach the same halt by slightly
+  different paths. Change it with the `machine_id` property rather than by
+  recompiling.
+* **The device at `0x50F0E000`.** Written from `0x403030E8`-`0x40303464`
+  through an index register at `+0x7C` with data at `+0x04`..`+0x34`, and read
+  back at `+0x2C`. Unidentified; the writes are currently logged and dropped.
+* **Where Valkyrie's VBL lands.** MkLinux registers its VBL handler on F108 flag
+  bit 6, so that is what is wired up, but the VIA2 slot register also has a
+  "video" bit.
+* **VIA2 flag bit 5.** Used here for the floppy controller, as AMIC does.
+  MkLinux labels it "any button".
+* **Sound.** Nothing is played. The FIFO status register reports both FIFOs as
+  having room so the chime routine at `0x403045D0` runs to completion instead
+  of spinning; samples are discarded.
+
+Note also that MkLinux's own Performa port has rough edges that will show up
+during bring-up: `grcswimiiihal.c` routes floppy access through AMIC DMA calls
+on a machine with no AMIC and no DMA engine, and `PERFORMA_CUDA_BASE_PHYS` is
+`0x50F16000`, which is the *floppy* base on the PDM machines.
