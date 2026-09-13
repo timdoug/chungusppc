@@ -100,13 +100,17 @@ void Display::request_screenshot() {
     screenshot_requested.store(true);
 }
 
-/** Write the frame just converted from guest video memory out as a BMP.
+/** Write the current guest frame out as a BMP.
 
-    Taken straight from the texture staging buffer rather than reading back
-    from the renderer: an accelerated renderer may not support reading its
-    target, and this is the guest's own resolution rather than the scaled
-    window. */
-static void save_screenshot(const uint8_t *src, int pitch, int width, int height) {
+    The frame is converted a second time into a surface we own rather than
+    being read back from the locked texture: SDL_LockTexture hands out
+    write-only staging memory on several backends (Metal among them), where
+    reading it back yields nothing but zeroes. Converting again also keeps the
+    capture at the guest's own resolution instead of the scaled window, and
+    avoids relying on the renderer being able to read its target. */
+static void save_screenshot(std::function<void(uint8_t *dst_buf, int dst_pitch)> convert_fb_cb,
+                            std::function<void(uint8_t *dst_buf, int dst_pitch)> cursor_ovl_cb,
+                            int width, int height) {
     SDL_Surface *shot = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32,
                                                        SDL_PIXELFORMAT_ARGB8888);
     if (shot == nullptr) {
@@ -114,14 +118,17 @@ static void save_screenshot(const uint8_t *src, int pitch, int width, int height
         return;
     }
 
+    convert_fb_cb((uint8_t *)shot->pixels, shot->pitch);
+    if (cursor_ovl_cb != nullptr)
+        cursor_ovl_cb((uint8_t *)shot->pixels, shot->pitch);
+
     // The framebuffer conversion leaves the alpha byte at zero because the
     // texture ignores it. Force it opaque or the image reads as fully
     // transparent everywhere.
     for (int y = 0; y < height; y++) {
-        const uint32_t *in = (const uint32_t *)(src + (size_t)y * pitch);
-        uint32_t *out = (uint32_t *)((uint8_t *)shot->pixels + (size_t)y * shot->pitch);
+        uint32_t *row = (uint32_t *)((uint8_t *)shot->pixels + (size_t)y * shot->pitch);
         for (int x = 0; x < width; x++)
-            out[x] = in[x] | 0xFF000000u;
+            row[x] |= 0xFF000000u;
     }
 
     if (SDL_SaveBMP(shot, SCREENSHOT_PATH) != 0)
@@ -524,10 +531,12 @@ void Display::update(std::function<void(uint8_t *dst_buf, int dst_pitch)> conver
     if (cursor_ovl_cb != nullptr)
         cursor_ovl_cb(dst_buf, dst_pitch);
 
-    if (screenshot_requested.exchange(false))
-        save_screenshot(dst_buf, dst_pitch, impl->display_w, impl->display_h);
-
     SDL_UnlockTexture(impl->disp_texture);
+
+    if (screenshot_requested.exchange(false))
+        save_screenshot(convert_fb_cb, cursor_ovl_cb, impl->display_w,
+                        impl->display_h);
+
     SDL_RenderClear(impl->renderer);
     SDL_RenderCopy(impl->renderer, impl->disp_texture, NULL, &impl->dest_rect);
 
