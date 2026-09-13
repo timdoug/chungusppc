@@ -170,39 +170,28 @@ private:
     bool            irq_level = false;
 };
 
-/** AMIC specific Serial Transmit DMA channel. */
-class AmicSerialXmitDma : public DmaOutChannel {
+/** AMIC serial DMA: four fixed 8 KiB buffers in the shared DMA area. */
+class AmicSerialDma : public DmaChannel {
 public:
-    AmicSerialXmitDma(std::string name) : DmaOutChannel(name) {}
-    ~AmicSerialXmitDma() = default;
-
-    void            write_ctrl(const uint8_t value);
-    uint8_t         read_stat() { return this->stat; }
-
-    DmaPullResult   pull_data(uint32_t req_len, uint32_t *avail_len,
-                                      uint8_t **p_data);
+    void init(InterruptCtrl* controller, uint64_t irq, uint32_t buffer_offset,
+              bool receive) {
+        int_ctrl = controller; irq_id = irq; buf_offset = buffer_offset;
+        receiving = receive;
+    }
+    void set_base(uint32_t base) { buf_base = base + buf_offset; }
+    uint8_t read_reg(unsigned reg) const;
+    void write_reg(unsigned reg, uint8_t value);
+    bool dma_is_ready() override;
+    void xfer_retry() override;
 
 private:
-    uint32_t        addr_ptr;
-    uint16_t        byte_count;
-    uint8_t         stat;
-};
-
-/** AMIC specific Serial Receive DMA channel (stub — control register only). */
-class AmicSerialRcvDma {
-public:
-    AmicSerialRcvDma(const std::string name) {}
-    ~AmicSerialRcvDma() = default;
-
-    void            write_ctrl(const uint8_t value);
-    uint8_t         read_stat() { return this->stat; }
-    void            set_byte_count(const uint16_t count) { this->byte_count = count; }
-    uint8_t         get_byte_count_hi() { return (this->byte_count >> 8) & 0x1F; }
-    uint8_t         get_byte_count_lo() { return this->byte_count & 0xFF; }
-
-private:
-    uint16_t        byte_count = 0;
-    uint8_t         stat = 0;
+    void update_irq();
+    uint32_t buf_base = 0, buf_offset = 0;
+    unsigned position = 0, count = 0;
+    uint8_t control = 0;
+    bool receiving = false, irq_level = false;
+    InterruptCtrl* int_ctrl = nullptr;
+    uint64_t irq_id = 0;
 };
 
 /** AMIC-specific SCSI DMA implementation. */
@@ -463,10 +452,7 @@ private:
     std::unique_ptr<AmicFloppyDma>      floppy_dma;
     std::unique_ptr<AmicScsiDma>        curio_dma;
     std::unique_ptr<AmicScsiDma>        scsi2_dma;
-    std::unique_ptr<AmicSerialXmitDma>  escc_xmit_b_dma;
-    std::unique_ptr<AmicSerialXmitDma>  escc_xmit_a_dma;
-    std::unique_ptr<AmicSerialRcvDma>   escc_rcv_b_dma;
-    std::unique_ptr<AmicSerialRcvDma>   escc_rcv_a_dma;
+    AmicSerialDma serial_dma[4]; // A TX, A RX, B TX, B RX
 
     // on-board video
     std::unique_ptr<DisplayID>          disp_id;

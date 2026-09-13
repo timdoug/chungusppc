@@ -86,10 +86,15 @@ AMIC::AMIC() : MMIODevice()
 
     // connect serial HW
     this->escc = dynamic_cast<EsccController*>(gMachineObj->get_comp_by_name("Escc"));
-    this->escc_xmit_b_dma = std::unique_ptr<AmicSerialXmitDma>(new AmicSerialXmitDma("EsccBXmit"));
-    this->escc_xmit_a_dma = std::unique_ptr<AmicSerialXmitDma>(new AmicSerialXmitDma("EsccAXmit"));
-    this->escc_rcv_b_dma = std::unique_ptr<AmicSerialRcvDma>(new AmicSerialRcvDma("EsccBRcv"));
-    this->escc_rcv_a_dma = std::unique_ptr<AmicSerialRcvDma>(new AmicSerialRcvDma("EsccARcv"));
+    const uint32_t serial_offsets[] = {0x24000, 0x22000, 0x20000, 0x26000};
+    const unsigned serial_irqs[] = {3, 2, 1, 0};
+    for (unsigned i = 0; i < 4; ++i) {
+        serial_dma[i].init(this, uint64_t(1) << (DMA0_INT_SHIFT + serial_irqs[i]),
+                           serial_offsets[i], i & 1);
+        if (escc)
+            escc->connect_dma_channel(i < 2 ? CH_A : CH_B,
+                                     i & 1 ? DIR_RX : DIR_TX, &serial_dma[i]);
+    }
 
     // connect Ethernet HW
     this->mace = dynamic_cast<MaceController*>(gMachineObj->get_comp_by_name("Mace"));
@@ -154,6 +159,9 @@ int AMIC::device_postinit()
 
 uint32_t AMIC::read(uint32_t rgn_start, uint32_t offset, int size)
 {
+    if (offset >= 0x32080 && offset < 0x320C0)
+        return serial_dma[(offset - 0x32080) >> 4].read_reg(offset & 15);
+
     // subdevices registers
     switch(offset >> 12) {
     case 0: // VIA1 registers
@@ -276,22 +284,6 @@ uint32_t AMIC::read(uint32_t rgn_start, uint32_t offset, int size)
         return (this->floppy_addr_ptr >> (3 - (offset & 3)) * 8) & 0xFF;
     case AMICReg::Floppy_DMA_Ctrl:
         return this->floppy_dma->read_stat();
-    case SCC_DMA_Xmt_A_Ctrl:
-        return this->escc_xmit_a_dma->read_stat();
-    case SCC_RXA_Byte_Cnt_Hi:
-        return this->escc_rcv_a_dma->get_byte_count_hi();
-    case SCC_RXA_Byte_Cnt_Lo:
-        return this->escc_rcv_a_dma->get_byte_count_lo();
-    case SCC_DMA_Rcv_A_Ctrl:
-        return this->escc_rcv_a_dma->read_stat();
-    case SCC_DMA_Xmt_B_Ctrl:
-        return this->escc_xmit_b_dma->read_stat();
-    case SCC_RXB_Byte_Cnt_Hi:
-        return this->escc_rcv_b_dma->get_byte_count_hi();
-    case SCC_RXB_Byte_Cnt_Lo:
-        return this->escc_rcv_b_dma->get_byte_count_lo();
-    case SCC_DMA_Rcv_B_Ctrl:
-        return this->escc_rcv_b_dma->read_stat();
     default:
         LOG_F(WARNING, "Unknown AMIC register read, offset=%x", offset);
     }
@@ -301,6 +293,13 @@ uint32_t AMIC::read(uint32_t rgn_start, uint32_t offset, int size)
 void AMIC::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
 {
     uint32_t mask;
+
+    if (offset >= 0x32080 && offset < 0x320C0) {
+        auto &channel = serial_dma[(offset - 0x32080) >> 4];
+        channel.set_base(dma_base);
+        channel.write_reg(offset & 15, value);
+        return;
+    }
 
     // subdevices registers
     switch(offset >> 12) {
@@ -544,38 +543,6 @@ void AMIC::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
             this->floppy_dma->reinit(this->floppy_addr_ptr, this->floppy_byte_cnt);
         }
         this->floppy_dma->write_ctrl(value);
-        break;
-    case AMICReg::SCC_DMA_Xmt_A_Ctrl:
-        LOG_F(INFO, "AMIC SCC Transmit Ch A DMA Ctrl updated, val=%x", value);
-        this->escc_xmit_a_dma->write_ctrl(value);
-        break;
-    case AMICReg::SCC_DMA_Rcv_A_Ctrl:
-        LOG_F(INFO, "AMIC SCC Receive Ch A DMA Ctrl updated, val=%x", value);
-        this->escc_rcv_a_dma->write_ctrl(value);
-        break;
-    case AMICReg::SCC_RXA_Byte_Cnt_Hi:
-        this->escc_rcv_a_dma->set_byte_count(
-            (this->escc_rcv_a_dma->get_byte_count_lo()) | ((value & 0x1F) << 8));
-        break;
-    case AMICReg::SCC_RXA_Byte_Cnt_Lo:
-        this->escc_rcv_a_dma->set_byte_count(
-            (this->escc_rcv_a_dma->get_byte_count_hi() << 8) | (value & 0xFF));
-        break;
-    case AMICReg::SCC_DMA_Xmt_B_Ctrl:
-        LOG_F(INFO, "AMIC SCC Transmit Ch B DMA Ctrl updated, val=%x", value);
-        this->escc_xmit_b_dma->write_ctrl(value);
-        break;
-    case AMICReg::SCC_DMA_Rcv_B_Ctrl:
-        LOG_F(INFO, "AMIC SCC Receive Ch B DMA Ctrl updated, val=%x", value);
-        this->escc_rcv_b_dma->write_ctrl(value);
-        break;
-    case AMICReg::SCC_RXB_Byte_Cnt_Hi:
-        this->escc_rcv_b_dma->set_byte_count(
-            (this->escc_rcv_b_dma->get_byte_count_lo()) | ((value & 0x1F) << 8));
-        break;
-    case AMICReg::SCC_RXB_Byte_Cnt_Lo:
-        this->escc_rcv_b_dma->set_byte_count(
-            (this->escc_rcv_b_dma->get_byte_count_hi() << 8) | (value & 0xFF));
         break;
     default:
         LOG_F(WARNING, "Unknown AMIC register write, offset=%x, val=%x",
@@ -1063,45 +1030,66 @@ void AmicScsiDma::xfer_retry() {
 }
 
 // =========================== Serial DMA stuff ===============================
-void AmicSerialXmitDma::write_ctrl(const uint8_t value)
+uint8_t AmicSerialDma::read_reg(unsigned reg) const
 {
-    if (value & 1) { // RST bit set?
-        this->stat &= 0x7C; // clear IF, RUN and RST bits
+    if (reg < 4) return ((buf_base + position) >> (8 * (3 - reg))) & 0xFF;
+    if (reg == 4) return (count >> 8) & 0x1F;
+    if (reg == 5) return count & 0xFF;
+    return reg == 8 ? control : 0;
+}
+
+void AmicSerialDma::write_reg(unsigned reg, uint8_t value)
+{
+    if (reg == 4) count = (count & 0xFF) | ((value & 0x1F) << 8);
+    if (reg == 5) count = (count & 0x1F00) | value;
+    if (reg != 8) return;
+    bool was_running = control & 2;
+    if (value & 1) {
+        position = count = 0;
+        control = 0;
+    } else {
+        control = (control & 0x80) | (value & 0x5E) | ((value & 0x10) << 1);
+        if (value & 0x80) control &= ~0x80;
+        if ((control & 2) && !was_running && !count) count = 8192;
     }
+    update_irq();
+    xfer_retry();
+}
 
-    // copy PAUSE to FROZEN
-    this->stat = (this->stat & 0xDF) | ((value & 0x10) << 1);
+bool AmicSerialDma::dma_is_ready()
+{
+    return (control & 0x12) == 2;
+}
 
-    // copy over RELOAD, PAUSE, IE, CONT and RUN bits
-    this->stat = (this->stat & 0xA1) | (value & 0x5E);
-
-    // clear interrupt flag if requested
-    if (value & 0x80) {
-        this->stat &= 0x7F;
+void AmicSerialDma::update_irq()
+{
+    bool level = (control & 0x88) == 0x88;
+    if (level != irq_level) {
+        irq_level = level;
+        if (int_ctrl) int_ctrl->ack_dma_int(irq_id, level);
     }
 }
 
-DmaPullResult AmicSerialXmitDma::pull_data(uint32_t req_len, uint32_t *avail_len,
-                                           uint8_t **p_data)
+void AmicSerialDma::xfer_retry()
 {
-    return DmaPullResult::NoMoreData;
-}
-
-void AmicSerialRcvDma::write_ctrl(const uint8_t value)
-{
-    if (value & 1) { // RST bit set?
-        this->stat &= 0x7C; // clear IF, RUN and RST bits
-    }
-
-    // copy PAUSE to FROZEN
-    this->stat = (this->stat & 0xDF) | ((value & 0x10) << 1);
-
-    // copy over RELOAD, PAUSE, IE, CONT and RUN bits
-    this->stat = (this->stat & 0xA1) | (value & 0x5E);
-
-    // clear interrupt flag if requested
-    if (value & 0x80) {
-        this->stat &= 0x7F;
+    if (!dev_obj || !dma_is_ready()) return;
+    // In continuous receive mode the count is an interrupt threshold, while
+    // the address wraps around the entire buffer (Mach's scc_amic.c).
+    unsigned length = 8192 - position;
+    if (count) length = std::min(length, count);
+    else if (!receiving || !(control & 4)) return;
+    auto mapping = mmu_map_dma_mem(buf_base + position, length);
+    int moved = receiving ? dev_obj->xfer_from(this, mapping.host_va, length)
+                          : dev_obj->xfer_to(this, mapping.host_va, length);
+    if (moved <= 0) return;
+    position = (position + moved) & 0x1FFF;
+    if (count) {
+        count -= moved;
+        if (!count) {
+            control |= 0x80;
+            if (!receiving || !(control & 4)) control &= ~2;
+            update_irq();
+        }
     }
 }
 

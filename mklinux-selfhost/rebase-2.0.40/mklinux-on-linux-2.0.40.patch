@@ -124782,10 +124782,10 @@ index 00000000..879d7706
 +#include "../../drivers/char/selection.h"
 diff --git a/osfmach3/chr_dev/serial.c b/osfmach3/chr_dev/serial.c
 new file mode 100644
-index 00000000..7cc8ffa7
+index 00000000..b88c7e77
 --- /dev/null
 +++ b/osfmach3/chr_dev/serial.c
-@@ -0,0 +1,1567 @@
+@@ -0,0 +1,1584 @@
 +/*
 + * Copyright (c) 1991-1998 Open Software Foundation, Inc. 
 + *  
@@ -126020,7 +126020,7 @@ index 00000000..7cc8ffa7
 +		return retval;
 +
 +	if (info->count == 1)
-+		server_thread_start(serial_read_thread, (void *) line);
++		server_thread_start(serial_read_thread, (void *) info->device_port);
 +
 +	retval = block_til_ready(tty, filp, info);
 +	if (retval) {
@@ -126208,7 +126208,8 @@ index 00000000..7cc8ffa7
 +		} else {
 +			info->flags &= ~ASYNC_DCD_PRESENT;
 +
-+			if (!((info->flags & ASYNC_CALLOUT_ACTIVE) &&
++			if ((info->flags & ASYNC_CHECK_CD) &&
++			    !((info->flags & ASYNC_CALLOUT_ACTIVE) &&
 +			(info->flags & ASYNC_CALLOUT_NOHUP))) {
 +#ifdef SERIAL_DEBUG_OPEN
 +				printk("scheduling hangup...");
@@ -126246,12 +126247,19 @@ index 00000000..7cc8ffa7
 +	cthread_set_name(cthread_self(), "serial read");
 +	server_thread_set_priv_data(cthread_self(), &priv_data);
 +
-+	line = (int) arg;
-+	info = rs_table + line;
++	/* Bind this reader to the open instance, not the reusable tty slot. */
++	device_port = (mach_port_t) arg;
 +	uniproc_enter();
-+	device_port = info->device_port;
++	for (line = 0; line < NR_PORTS; line++)
++		if (rs_table[line].device_port == device_port)
++			break;
++	if (line == NR_PORTS)
++		goto out;
++	info = rs_table + line;
 +
 +	for (;;) {
++		if (info->device_port != device_port)
++			break;
 +		data_count = sizeof inbuf;
 +		uniproc_exit();
 +		kr = device_read_inband(device_port,
@@ -126262,6 +126270,11 @@ index 00000000..7cc8ffa7
 +					&data_count);
 +		uniproc_enter();
 +
++		/* device_close wakes the old read with an error. A quick reopen
++		 * (as in getty) must not turn that error into a new tty's hangup. */
++		if (info->device_port != device_port)
++			break;
++
 +		if (kr == D_OUT_OF_BAND) {
 +			serial_handle_oob_event(info, device_port);
 +			continue;
@@ -126270,10 +126283,7 @@ index 00000000..7cc8ffa7
 +			if (!((info->flags & ASYNC_CALLOUT_ACTIVE) &&
 +                           (info->flags & ASYNC_CALLOUT_NOHUP))) 
 +                       		queue_task_irq_off(&info->tqueue_hangup, &tq_scheduler);
-+			uniproc_exit();
-+			cthread_detach(cthread_self());
-+			cthread_exit((void *) 0);
-+			/* NEVER REACHED */
++			break;
 +		}
 +
 +		if (data_count <= 0) 
@@ -126295,7 +126305,7 @@ index 00000000..7cc8ffa7
 +			 * go away..
 +			 */
 +
-+			if (info->tty == NULL)
++			if (info->tty == NULL || info->device_port != device_port)
 +				break;
 +
 +			if ((info->tty->flip.count+data_count) < TTY_FLIPBUF_SIZE)
@@ -126305,6 +126315,8 @@ index 00000000..7cc8ffa7
 +			osfmach3_yield();
 +		}
 +
++		if (info->device_port != device_port)
++			break;
 +		if (info->tty == NULL)
 +			continue;
 +
@@ -126325,6 +126337,11 @@ index 00000000..7cc8ffa7
 +		if (!wait_loop)
 +			__osfmach3_yield(1);
 +	}
++out:
++	uniproc_exit();
++	cthread_detach(cthread_self());
++	cthread_exit((void *) 0);
++	return NULL;
 +}
 +
 +#ifdef MODULE
