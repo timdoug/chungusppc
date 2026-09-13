@@ -215,8 +215,10 @@ public:
     // 53C94 registers access
     uint8_t  read(uint8_t reg_offset);
     void     write(uint8_t reg_offset, uint8_t value);
-    uint16_t pseudo_dma_read();
-    void     pseudo_dma_write(uint16_t data);
+    uint32_t pseudo_dma_read(int size = 2);
+    void     pseudo_dma_write(uint32_t data, int size = 2);
+    uint16_t pseudo_dma_read_word();
+    void     pseudo_dma_write_word(uint16_t data);
 
     void set_drq_callback(DrqCb cb) {
         this->drq_cb = cb;
