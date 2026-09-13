@@ -6,6 +6,7 @@ This directory contains
 the patches, configuration, source checksums, build tools, and regression tests.
 Original compressed archives in `sources/` allow offline reproduction and are
 ignored by Git. Extracted host trees and transfer archives are disposable.
+See [STATUS.md](STATUS.md) for verified coverage, current binaries and next checks.
 
 ## Prepare on the host
 
