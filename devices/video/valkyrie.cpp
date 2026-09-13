@@ -106,7 +106,16 @@ uint32_t ValkyrieVideo::read(uint32_t rgn_start, uint32_t offset, int size) {
 
 void ValkyrieVideo::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size) {
     if ((rgn_start & 0xFFFF) == Valkyrie::CLUT_OFFSET) {
-        switch((offset >> this->reg_shift) & 3) {
+        int reg = (offset >> this->reg_shift) & 3;
+
+        // Where the registers are four bytes apart the palette data port
+        // answers at +8 as well as at +4. Mac OS streams its entries into the
+        // first, MkLinux and Linux's valkyriefb into the second; both write
+        // the index once and then three components per entry.
+        if (this->reg_shift == 2 && reg == 2)
+            reg = Valkyrie::clut_color;
+
+        switch(reg) {
         case Valkyrie::clut_index:
             this->clut_index = value;
             this->comp_index = 0;
