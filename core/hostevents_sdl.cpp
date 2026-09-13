@@ -139,6 +139,11 @@ static const struct { const char *name; AdbKey key; } mod_names[] = {
 // launched from still has it. Naming them up front sidesteps the race.
 static std::vector<AdbKey> startup_keys;
 static uint32_t startup_keys_release_ticks = 0;
+static uint32_t startup_keys_repeat_ticks = 0;
+
+// The guest's own keyboard driver is installed well after the first report, so
+// a single transition can land before anything is listening. Repeat it.
+constexpr uint32_t STARTUP_KEYS_REPEAT_MS = 500;
 
 // Long enough to cover loading a System Folder's worth of extensions, and the
 // guest is in no position to want real keystrokes before then.
@@ -426,6 +431,18 @@ void EventManager::feed_input_script() {
 
 void EventManager::poll_events() {
     this->feed_input_script();
+
+    // Keep telling the guest the keys are down until it is time to let go.
+    if (startup_keys_release_ticks && SDL_GetTicks() >= startup_keys_repeat_ticks &&
+        SDL_GetTicks() < startup_keys_release_ticks) {
+        startup_keys_repeat_ticks = SDL_GetTicks() + STARTUP_KEYS_REPEAT_MS;
+        KeyboardEvent ke{};
+        for (AdbKey key : startup_keys) {
+            ke.key = key;
+            ke.flags = KEYBOARD_EVENT_DOWN;
+            this->_keyboard_signal.emit(ke);
+        }
+    }
 
     // Let go of the startup keys once the guest has had time to see them.
     if (startup_keys_release_ticks && SDL_GetTicks() >= startup_keys_release_ticks) {
