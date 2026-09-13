@@ -233,14 +233,44 @@ Two things to know before trying it:
 
 * **8 MB of RAM is not enough.** The boot runs off the end of memory, logging
   accesses to `0x00800000`, and dies. Use `--rambank1_size 32`.
-* **`--hdd_img` attaches the image to *both* buses.** The property is global and
-  `AtaHardDisk` and `ScsiBus` both consume it, so the image also appears as SCSI
-  ID 0. The ROM finds it, selects it, and stalls: the sequencer parks in
-  `RCV_DATA` with a full FIFO while the driver polls the 53C94 status register,
-  because with no DMA channel nothing tells the processor to drain the FIFO
-  through the handshake port at `0x50F10100`. Asserting DRQ from `rcv_data()`
-  is not sufficient - the driver is not watching that bit. Until the pseudo-DMA
-  receive path is finished, this is the remaining blocker for a disk boot.
+* **Use `--hdd2_img` for a second disk.** It lands on `Ide0:1`, the slave of the
+  first channel, which is where a machine with one IDE connector has to put it.
+  `hdd2_config` moves it elsewhere.
+
+`hdd_img` used to be attached to the SCSI bus as well as the IDE one, because
+the property is global and both `AtaHardDisk` and `ScsiBus` read it. The ROM
+would find the second copy at SCSI ID 0, select it, and stall with the sequencer
+parked in `RCV_DATA`, a full FIFO and the driver polling the 53C94 status
+register - with no DMA channel nothing tells the processor to drain the FIFO
+through the handshake port at `0x50F10100`. `ScsiBus` now leaves `hdd_img` alone
+on any machine that has an IDE hard disk. The pseudo-DMA receive path is still
+unfinished, so a SCSI CD-ROM will hit the same stall; asserting DRQ from
+`rcv_data()` is not enough, the driver is not watching that bit.
+
+## MkLinux
+
+The booter runs. Mac OS boots off the IDE disk, launches the MkLinux booter, and
+its splash screen comes up with the Mach options and root device - so everything
+up to the handoff works.
+
+Then the PowerPC branches to `0x4080281C` and dies. Facts established so far:
+
+* The exception is `EXC_PROGRAM` with `srr1` bit `0x00080000`, an illegal
+  instruction, and the branch comes from `lr = 0x0022F498` in RAM.
+* ROM offset `0x281C` is 68k code - it sits in a run of `bsr.s` stubs that looks
+  like the 68k exception dispatch table, ending `0x08F8 0x0007 0x0C2C` / `67F6` /
+  `4E73` (`rte`). So this is a 68k address being executed as PowerPC.
+* The same code at `0x0022F498` also dereferences `0xDEADBEF2` just beforehand,
+  which is a poison value, so it is reading a structure that was never filled in.
+* Nothing in the machine ever reads physical `0x408xxxxx` as data, so the 68k
+  ROM is not aliased there - the nanokernel maps the 68k ROM base `0x40800000`
+  onto physical `0x40000000` through the page tables. Mapping a second copy of
+  the ROM at `0x40800000` makes the fetch succeed and the machine then spins
+  forever executing 68k bytes as PowerPC, which is strictly worse than the
+  abort. Don't.
+
+That points at a mixed-mode call - something that should trap into the 68k
+emulator taking a direct branch instead - but which mechanism is not yet known.
 
 A note on capture: `save_screenshot` used to read the frame back out of the
 locked SDL texture, which is write-only memory on the Metal backend and yields
