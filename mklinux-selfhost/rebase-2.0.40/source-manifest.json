@@ -2842,7 +2842,7 @@
     "osfmach3/sound/dmabuf.c": "9dd94ae7e31d666b45a231f072e6b6d9bb442517a4c2fdd8cace56e6eced12dc",
     "osfmach3/sound/drivers/awacs/awacs_data.c": "f8ca701c41ba160e78780533e078242ca18bf0dd6310ec728c0e5bbc138b9661",
     "osfmach3/sound/drivers/awacs/awacs_entry.c": "fb039fc748b7d14ddf4a77a076fd096fb38f6965078f54d3959bc335504d5b0d",
-    "osfmach3/sound/drivers/awacs/awacs_ops.c": "acb90a0002a1e5f22102553ac674119970c2b0127aaee7c26470111caa8a54d6",
+    "osfmach3/sound/drivers/awacs/awacs_ops.c": "ca1d951297a965615a7efa6f0b07080fbe12604f444f482f43d6095d658df412",
     "osfmach3/sound/drivers/awacs/awacs_types.h": "e973bccac35fe207c1c9b8236f0ec37a1295c0ca69ba2de8f05fa839a6e51d50",
     "osfmach3/sound/local.h": "31eea482c02517279e054649193f0538778f85a70e2c77316b7226be295d3d3f",
     "osfmach3/sound/midi_ctrl.h": "e3c973501b0fb63eec5c3fb74402582d9e27df817ea09bd4ebad26c9b93960d9",
@@ -2897,7 +2897,7 @@
     "scripts/tkparse.h": "509c8ec9504513c808b28a1d92eda30e1297f20ad562933eec8533ba120a2f6a"
   },
   "artifacts": {
-    "mklinux-on-linux-2.0.40.patch": "668e832beb73bbc980d8a1f6333c040a83f53f839fcbbe68985876ad988f149c"
+    "mklinux-on-linux-2.0.40.patch": "bef23b9c4675e795f3d5815f91774b9ec1a78d1e2e3cb54338d5c1982737cd0f"
   },
   "note": "The full patch applies to Linux 2.0.40. files contains the expected SHA-256 of every output source file; inputs records upstream and MkLinux provenance."
 }
