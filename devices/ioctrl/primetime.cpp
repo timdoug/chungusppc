@@ -111,7 +111,7 @@ uint32_t PrimeTimeTwo::read(uint32_t rgn_start, uint32_t offset, int size)
     case 0x10: // SCSI registers, 16 bytes apart
     case 0x11:
         if (offset & 0x100)
-            return this->scsi->pseudo_dma_read();
+            return this->scsi->pseudo_dma_read(size);
         return this->scsi->read((offset >> 4) & 0xF);
     case 0x14: // sound buffers and DFAC II control
         return this->asc_read(offset);
@@ -160,7 +160,7 @@ void PrimeTimeTwo::write(uint32_t rgn_start, uint32_t offset, uint32_t value, in
     case 0x10: // SCSI registers
     case 0x11:
         if (offset & 0x100)
-            this->scsi->pseudo_dma_write(value);
+            this->scsi->pseudo_dma_write(value, size);
         else
             this->scsi->write((offset >> 4) & 0xF, value);
         return;

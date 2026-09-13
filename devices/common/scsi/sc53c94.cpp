@@ -209,7 +209,9 @@ void Sc53C94::write(uint8_t reg_offset, uint8_t value)
     }
 }
 
-uint16_t Sc53C94::pseudo_dma_read()
+/** Move one word between the data FIFO and the handshake port. The port is a
+    word wide, but the bus access need not be: see pseudo_dma_read() below. */
+uint16_t Sc53C94::pseudo_dma_read_word()
 {
     uint16_t data_word;
     bool     is_done = false;
@@ -244,7 +246,27 @@ uint16_t Sc53C94::pseudo_dma_read()
     return data_word;
 }
 
-void Sc53C94::pseudo_dma_write(uint16_t data) {
+/** A 32-bit access to the handshake port moves two words. The first one
+    transferred sits at the lower address, i.e. in the high half as far as a big
+    endian guest is concerned. Apple's SCSI Manager starts a transfer with word
+    accesses and switches to long ones once the buffer is aligned; a machine
+    with no DMA engine has no other way to get the data across, so returning
+    one word for a long read loses half of every transfer. */
+uint32_t Sc53C94::pseudo_dma_read(int size)
+{
+    uint32_t data = this->pseudo_dma_read_word();
+    if (size == 4)
+        data = (data << 16) | this->pseudo_dma_read_word();
+    return data;
+}
+
+void Sc53C94::pseudo_dma_write(uint32_t data, int size) {
+    if (size == 4)
+        this->pseudo_dma_write_word((data >> 16) & 0xFFFFU);
+    this->pseudo_dma_write_word(data & 0xFFFFU);
+}
+
+void Sc53C94::pseudo_dma_write_word(uint16_t data) {
     this->fifo_push((data >> 8) & 0xFFU);
     this->fifo_push(data & 0xFFU);
 
