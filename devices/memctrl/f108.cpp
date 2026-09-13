@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /** F108 memory controller emulation. */
 
+#include <cpu/ppc/ppcemu.h>
 #include <devices/deviceregistry.h>
 #include <devices/ioctrl/primetime.h>
 #include <devices/memctrl/f108.h>
@@ -53,10 +54,11 @@ int F108::device_postinit()
 
 uint32_t F108::read(uint32_t rgn_start, uint32_t offset, int size)
 {
-    // The ROM's interrupt handler at 0x40307380 reads this register, inverts
-    // the low three bits and treats the result as the 68k interrupt priority
-    // level. All ones therefore means "nothing pending"; returning zero would
-    // look like a level 7 interrupt, i.e. an NMI.
+    // The nanokernel's external interrupt handler at 0x403158A8 reads this
+    // register, inverts the low three bits and stores the result as the
+    // interrupt priority level of the emulated 68k. All ones therefore means
+    // "nothing pending"; returning zero would look like a level 7 interrupt,
+    // i.e. an NMI.
     if (offset == Capella::INT_STATUS && this->prime_time)
         return ~this->prime_time->get_int_level() & 7;
 
