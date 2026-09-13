@@ -37,6 +37,8 @@ namespace Valkyrie {
     constexpr uint32_t REGBASE_CORDYCEPS  = 0x50F20000; // Performa 5200 etc.
     constexpr uint32_t REGBASE_ALCHEMY    = 0xF1300000; // Performa 6400 etc.
     constexpr uint32_t VRAM_BASE          = 0xF1000000;
+    // The 5200/6200 display RAM lives elsewhere, see the developer note p. 22.
+    constexpr uint32_t VRAM_BASE_CORDYCEPS = 0xF9000000;
     constexpr uint32_t CLUT_OFFSET        = 0x4000;
     constexpr uint32_t CONTROL_OFFSET     = 0xA000;
 
