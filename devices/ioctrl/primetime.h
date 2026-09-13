@@ -188,6 +188,7 @@ private:
     uint8_t     asc_regs[0x800] = {};
     uint8_t     escc_irq_lines = 0;
     uint8_t     cpu_int_lines = 0;
+    uint8_t     acked_level   = 0; // priority level the nanokernel last read
 
     uint8_t     via2_irq      = 0;
     uint8_t     slot_irq      = 0;
