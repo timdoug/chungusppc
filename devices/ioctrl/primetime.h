@@ -154,6 +154,9 @@ public:
     /** Called for writes to Capella's interrupt acknowledge register. */
     void clear_cpu_int();
 
+    /** Highest pending 68k interrupt priority level, or zero when idle. */
+    uint8_t get_int_level() const;
+
 private:
     uint32_t via2_read(uint32_t offset);
     void     via2_write(uint32_t offset, uint8_t value);
