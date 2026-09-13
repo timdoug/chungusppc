@@ -192,14 +192,29 @@ Measurements that narrow it further, and rule out the obvious suspects:
   `0x1DE84`.
 * `Lvl1DT[7]`, where a spurious interrupt with no enabled flag set would
   dispatch, is a plain `rts` at `0x4081C2E8`, so that path is harmless too.
+* The dispatch itself is correct. `movea.w $4001c338(pc,d0.w),a0` at
+  `0x1C306` carries extension word `0x0230`, whose scale field is 2, so the
+  table is indexed by `(IFR & IER) * 2`: CA1 lands on `0x0196`, which is
+  `Lvl1DT[1]` = `0x4081DE96`, the tick handler. Reading that table without
+  the scale factor makes every entry look off by one — it is not.
 
-So the outer VBL is wedged in the handful of instructions between the
-`andi.w #$f8ff, sr` at `0x1DEAA` and the `bclr` at `0x1DEF6`, which on the
-face of it cannot block. Something in that window is not returning, and the
-68k PC samples cluster on exactly those addresses plus the dispatcher. The
-next step is to decode that window against the real 68k state — the emulator
-keeps it in the context block at `0x68FFF000` — rather than inferring it from
-snapshots taken at different times.
+So the outer VBL is wedged between the `andi.w #$f8ff, sr` at `0x1DEAA` and
+the `bclr` at `0x1DEF6`, and the nested frame's saved PC is `0x1DEAE` — the
+very next instruction after the mask drops. The handler lowers the mask and is
+immediately re-interrupted, over and over, which is exactly where the 68k PC
+samples cluster.
+
+That is the shape of a 68k interrupt being re-delivered when the hardware is
+no longer asserting one: the VIA raises and clears cleanly 60 times a second,
+Capella's priority register reads idle when sampled, and the 603 takes only
+about 60 external interrupts a second, yet the 68k re-enters as soon as it
+drops its mask. The suspicion is that the nanokernel latches the 68k interrupt
+level somewhere and we never give it a reason to re-read it as idle — so the
+next thing to find is where the nanokernel gets that level from in the general
+path, which need not be the `+0x24` register the handler at `0x40307358` uses.
+
+Removing the CA1 tick entirely does clear the stuck guard, but only because it
+removes every tick, so it proves nothing beyond the wedge being tick-driven.
 
 For comparison, `pm6400` on the same emulator reaches the boot-wait loop
 within seconds and draws the grey desktop, the blinking disk icon and the
