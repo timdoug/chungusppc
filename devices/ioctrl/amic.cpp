@@ -995,11 +995,18 @@ void AmicScsiDma::xfer_from_device() {
 
     uint32_t len = this->dev_obj->tell_xfer_size(this);
 
-    MapDmaResult res = mmu_map_dma_mem(this->addr_ptr, len, false);
-
-    int got_bytes = this->dev_obj->xfer_from(this, res.host_va, len);
-    if (got_bytes > 0) {
-        this->addr_ptr += got_bytes;
+    // A physically contiguous buffer can cross independently allocated RAM
+    // banks (for example the 6100's motherboard/expansion boundary at 8 MiB).
+    while (len) {
+        auto region = mem_ctrl_instance->find_range(addr_ptr);
+        uint32_t chunk = region ? std::min(len, region->end - addr_ptr + 1) : len;
+        auto memory = mmu_map_dma_mem(addr_ptr, chunk, false);
+        if (!memory.is_writable)
+            ABORT_F("AMIC: attempting SCSI DMA write to read-only memory");
+        int moved = dev_obj->xfer_from(this, memory.host_va, chunk);
+        if (moved <= 0) break;
+        addr_ptr += moved;
+        len -= moved;
     }
 }
 
@@ -1011,11 +1018,14 @@ void AmicScsiDma::xfer_to_device() {
 
     uint32_t len = this->dev_obj->tell_xfer_size(this);
 
-    MapDmaResult res = mmu_map_dma_mem(this->addr_ptr, len, false);
-
-    int got_bytes = this->dev_obj->xfer_to(this, res.host_va, len);
-    if (got_bytes > 0) {
-        this->addr_ptr += got_bytes;
+    while (len) {
+        auto region = mem_ctrl_instance->find_range(addr_ptr);
+        uint32_t chunk = region ? std::min(len, region->end - addr_ptr + 1) : len;
+        auto memory = mmu_map_dma_mem(addr_ptr, chunk, false);
+        int moved = dev_obj->xfer_to(this, memory.host_va, chunk);
+        if (moved <= 0) break;
+        addr_ptr += moved;
+        len -= moved;
     }
 }
 
