@@ -803,6 +803,15 @@ bool Sc53C94::rcv_data()
 
     this->bus_obj->pull_data(this->target_id, &this->data_fifo[this->data_fifo_pos], req_count);
     this->data_fifo_pos += req_count;
+
+    // The transfer counter follows the SCSI bus, not the port the processor
+    // collects the data from, so it reaches zero once the bus side is done.
+    // A machine with no DMA engine has to be told that: its driver waits for
+    // terminal count before it will touch the handshake port at all, and we
+    // would otherwise only ever set the bit in response to a read through it.
+    if (this->is_dma_cmd && !this->channel_obj && req_count >= (int)this->xfer_count)
+        this->status |= STAT_TC;
+
     return true;
 }
 
