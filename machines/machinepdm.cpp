@@ -123,16 +123,27 @@ int MachinePdm::initialize(const std::string &id) {
         return -1;
     }
 
-    uint32_t bank_a_size = GET_INT_PROP("rambank1_size");
-    uint32_t bank_b_size = GET_INT_PROP("rambank2_size");
-    if (bank_b_size && bank_a_size != bank_b_size) {
-        LOG_F(ERROR, "rambank1_size and rambank2_size should have equal size");
-        return -1;
-    }
+    if (id == "pm6100") {
+        uint32_t bank_a_size = GET_INT_PROP("rambank1_size");
+        uint32_t bank_b_size = GET_INT_PROP("rambank2_size");
+        if (bank_b_size && bank_a_size != bank_b_size) {
+            LOG_F(ERROR, "rambank1_size and rambank2_size should have equal size");
+            return -1;
+        }
 
-    if (hmc_obj->install_ram(BANK_SIZE_8MB, bank_a_size << 20, bank_b_size << 20)) {
-        LOG_F(ERROR, "Failed to allocate RAM!");
-        return -1;
+        if (hmc_obj->install_ram(BANK_SIZE_8MB, bank_a_size << 20, bank_b_size << 20)) {
+            LOG_F(ERROR, "Failed to allocate RAM!");
+            return -1;
+        }
+    } else {
+        unsigned bank_count = id == "pm7100" ? 4 : 8;
+        std::vector<uint32_t> banks;
+        for (unsigned bank = 1; bank <= bank_count; ++bank)
+            banks.push_back(GET_INT_PROP("rambank" + std::to_string(bank) + "_size") << 20);
+        if (hmc_obj->install_ram_banks(banks)) {
+            LOG_F(ERROR, "Failed to allocate RAM!");
+            return -1;
+        }
     }
 
     // find and attach devices to the processor direct slot (PDS)
@@ -169,6 +180,18 @@ static const PropMap pm6100_settings = {
         new BinProperty(0)},
 };
 
+static PropMap nubus_pdm_settings(unsigned bank_count) {
+    PropMap settings = {
+        {"mon_id", new StrProperty("HiRes12-14in", PDMBuiltinMonitorIDs)},
+        {"pds", new StrProperty("")},
+        {"emmo", new BinProperty(0)},
+    };
+    for (unsigned bank = 1; bank <= bank_count; ++bank)
+        settings.emplace("rambank" + std::to_string(bank) + "_size",
+            new IntProperty(0, std::vector<uint32_t>({0, 1, 2, 4, 8, 16, 32})));
+    return settings;
+}
+
 static std::vector<std::string> pm6100_devices = {
     "HMC", "Amic"
 };
@@ -178,11 +201,11 @@ static const DeviceDescription MachinePdm6100_descriptor = {
 };
 
 static const DeviceDescription MachinePdm7100_descriptor = {
-    MachinePdm::create7100, pm6100_devices, pm6100_settings
+    MachinePdm::create7100, pm6100_devices, nubus_pdm_settings(4)
 };
 
 static const DeviceDescription MachinePdm8100_descriptor = {
-    MachinePdm::create8100, {"HMC", "Sc53C94_2", "Amic"}, pm6100_settings
+    MachinePdm::create8100, {"HMC", "Sc53C94_2", "Amic"}, nubus_pdm_settings(8)
 };
 
 REGISTER_DEVICE(MachinePdm6100, MachinePdm6100_descriptor);

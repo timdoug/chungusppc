@@ -44,10 +44,10 @@ HMC::HMC() : MemCtrlBase()
 
 uint32_t HMC::read(uint32_t rgn_start, uint32_t offset, int size)
 {
-    if (!offset)
-        return !!(this->ctrl_reg & (1ULL << this->bit_pos++));
-    else
-        return 0; // FIXME: what should be returned for invalid offsets?
+    if (offset) return 0;
+    uint32_t value = (ctrl_reg >> bit_pos) & 1;
+    bit_pos = (bit_pos + 1) % HMC_CTRL_BITS;
+    return value;
 }
 
 void HMC::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
@@ -77,6 +77,12 @@ void HMC::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
 }
 
 void HMC::remap_ram_regions() {
+    if (fixed_ram_layout) {
+        if (bank_config != BANK_CFG_128MB)
+            LOG_F(WARNING, "%s: compact RAM matrix %u is not implemented on this board",
+                  name.c_str(), bank_config);
+        return;
+    }
     uint32_t bank_b_addr;
 
     switch (this->bank_config) {
@@ -205,6 +211,29 @@ int HMC::install_ram(uint32_t mb_bank_size, uint32_t bank_a_size, uint32_t bank_
 
     this->remap_ram_regions();
 
+    return 0;
+}
+
+int HMC::install_ram_banks(const std::vector<uint32_t>& banks) {
+    if (banks.size() > 8) return -1;
+    for (uint32_t size : banks) {
+        if (size && (size < 0x00100000 || size > BANK_SIZE_32MB || (size & (size - 1)))) {
+            LOG_F(ERROR, "%s: invalid RAM bank size %u", name.c_str(), size);
+            return -1;
+        }
+    }
+    fixed_ram_layout = true;
+    if (!add_ram_region(BANK_MB_START, BANK_SIZE_8MB)) return -1;
+
+    // Apple, Enhanced Power Macintosh developer note, Appendix A, Table A-2:
+    // each expansion bank occupies up to 32 MiB, starting 16 MiB into its
+    // 64 MiB physical window. These are independent banks, never aliases.
+    // Mapping bank A again at 0x10000000 made the ROM report the same storage
+    // twice; Mach then allocated overlapping pages and corrupted live data.
+    for (size_t bank = 0; bank < banks.size(); ++bank) {
+        if (banks[bank] && !add_ram_region(0x01000000 + bank * 0x04000000, banks[bank]))
+            return -1;
+    }
     return 0;
 }
 
