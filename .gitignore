@@ -40,6 +40,7 @@ chungusppc-screen.png
 chungusppc-input.txt
 chungusppc.log
 chungussocket
+chungussocket-b
 
 # Ignore system files
 .DS_Store

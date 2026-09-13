@@ -27,9 +27,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <devices/common/hwcomponent.h>
 #include <devices/common/dbdma.h>
 #include <devices/common/dmacore.h>
+#include <devices/common/hwinterrupt.h>
 #include <devices/serial/chario.h>
 
 #include <cinttypes>
+#include <deque>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -84,7 +87,7 @@ enum ChIndex : uint8_t {
 class EsccChannel : public DmaDevice {
 public:
     EsccChannel(std::string name) { this->name = name; }
-    ~EsccChannel() = default;
+    ~EsccChannel();
 
     void attach_backend(int id);
     void reset(bool hw_reset);
@@ -94,6 +97,11 @@ public:
     uint8_t receive_byte();
     uint8_t get_enh_reg();
     void set_enh_reg(uint8_t value);
+    uint8_t interrupt_pending();
+    void command(uint8_t value);
+    void poll_dma();
+    void set_interrupt_callback(std::function<void()> callback) { interrupt_changed = std::move(callback); }
+    void attach_backend(std::unique_ptr<CharIoBackEnd> backend) { chario = std::move(backend); }
 
     void set_dma_channel(DirIndex dir_index, DmaChannel *ch_obj) {
         this->dma_channels[dir_index] = ch_obj;
@@ -114,7 +122,17 @@ public:
     int xfer_to  (DmaChannel *ch_obj, uint8_t *buf, int len) override;
 
 private:
-    DmaChannel*     dma_channels[2];
+    DmaChannel*     dma_channels[2] = {};
+    bool           tx_pending = false;
+    bool           ext_pending = false;
+    bool           first_rx_armed = true;
+    std::deque<uint8_t> rx_fifo;
+    uint32_t rx_timer = 0, tx_timer = 0;
+    std::function<void()> interrupt_changed;
+    uint64_t character_period(bool transmit = false) const;
+    void update_receive_timer();
+    void receive_tick();
+    void update_modem_status();
 
     std::string     name;
     uint8_t         read_regs[16] = {};
@@ -134,6 +152,8 @@ class EsccController : public HWComponent {
 public:
     EsccController();
     ~EsccController() = default;
+    int device_postinit() override;
+    void poll();
 
     static std::unique_ptr<HWComponent> create() {
         return std::unique_ptr<EsccController>(new EsccController());
@@ -142,6 +162,9 @@ public:
     // ESCC registers access
     uint8_t read(uint8_t reg_offset);
     void    write(uint8_t reg_offset, uint8_t value);
+    void attach_backend(ChIndex channel, std::unique_ptr<CharIoBackEnd> backend) {
+        (channel == CH_A ? ch_a : ch_b)->attach_backend(std::move(backend));
+    }
 
     void connect_dma_channel(ChIndex ch_idx, DirIndex dir_idx, DmaChannel *ch_obj) {
         switch (ch_idx) {
@@ -154,6 +177,7 @@ private:
     void reset();
     void write_internal(EsccChannel* ch, uint8_t value);
     uint8_t read_internal(EsccChannel* ch);
+    void update_interrupts();
 
     std::unique_ptr<EsccChannel>    ch_a;
     std::unique_ptr<EsccChannel>    ch_b;
@@ -163,6 +187,9 @@ private:
     uint8_t master_int_cntrl = 0;
     uint8_t int_vec = 0;
     uint8_t recovery_counter = 8;
+    InterruptCtrl* int_ctrl = nullptr;
+    uint64_t irq_a = 0, irq_b = 0;
+    bool irq_level_a = false, irq_level_b = false;
 
     // LTPC state
     uint8_t start_a   = 0;

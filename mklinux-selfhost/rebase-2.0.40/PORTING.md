@@ -53,6 +53,9 @@ build, installation, and cleanup commands.
   into its scratch buffer. In-place conversion changed OSS fragments, so a
   fragment submitted again after drain/restart was byte-swapped twice on
   the 6100, whose AWACS lacks hardware byte swapping.
+* **Serial:** bind each reader thread to the Mach device port it opened.
+  A pending read from a closed port must not hang up a newly opened tty in
+  the same slot. Respect `CLOCAL` when receiving a carrier-drop event.
 * **build and devices:** use `KERNELRELEASE` with the `-osfmach3` suffix for
   modules, retain Mach headers/libraries, name the boot-parameter structure,
   and stop module compilation on a failed subdirectory. Keep ADB character
