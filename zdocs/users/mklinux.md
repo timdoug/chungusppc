@@ -383,10 +383,15 @@ OS boot.
 
 Expect roughly two minutes to the login prompt. The port's own caveats apply
 and are not emulator problems: no sound, and SCSI "rather slow... partially a
-lack of pseudo-DMA code". In practice anything I/O heavy, including a forced
-`fsck`, is slower than it is worth waiting for, so this is a boot rather than a
-usable system. The IDE disk is not reachable from MkLinux either - its ATAPI
-probe uses a register spacing this machine does not decode.
+lack of pseudo-DMA code" - about 150 KB/s here, against 6.9 MB/s on a 6100,
+because MkLinux moves every byte through the chip's FIFO register. Anything
+heavier than a boot is correspondingly slow. If you kill the emulator with the
+root filesystem mounted, repair it from the host rather than sitting through
+the guest's own check:
+
+```sh
+e2fsck -fy 'mklinux.img?offset=32768'
+```
 
 ## IDE boot
 
