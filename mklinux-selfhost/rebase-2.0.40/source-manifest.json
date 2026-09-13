@@ -827,7 +827,7 @@
     "drivers/char/pcwd.c": "4f301276848b2769cece53592fb6ff9538e2046ec842edd0b4af2303df8f0241",
     "drivers/char/pcxx.c": "f60568346b54efde249abf17bcc9df0a297726ef172f83629cff93c12f4d57df",
     "drivers/char/pcxx.h": "43531ce683a36393b4837236a936f1714ac1f1d14f9f87fb0595652870e2f180",
-    "drivers/char/pmac-cons.c": "7a9197ed33f082d066dd233f8ff9b4344baf03148003b7b5c509de8cf8911086",
+    "drivers/char/pmac-cons.c": "e9f5ae6d3e60938cee5bd334c5c09f16571ea7d7be8ba3843d85884e873a6865",
     "drivers/char/psaux.c": "694251dde04b7b7f6f82056f1eb2df109f316d4ada1332bb2e9ffa1ed987737d",
     "drivers/char/pty.c": "fdc070e2184b737dc746fba4856b91f551cc792c71d77deea6b02575088fc8ba",
     "drivers/char/random.c": "69962fad21d948427dcb4ddae10e61c3ae4824a4147638aa79f67a7ca533da82",
@@ -2897,7 +2897,7 @@
     "scripts/tkparse.h": "509c8ec9504513c808b28a1d92eda30e1297f20ad562933eec8533ba120a2f6a"
   },
   "artifacts": {
-    "mklinux-on-linux-2.0.40.patch": "bef23b9c4675e795f3d5815f91774b9ec1a78d1e2e3cb54338d5c1982737cd0f"
+    "mklinux-on-linux-2.0.40.patch": "390408a997bb39465cfd93ec11d8eddb5053d00589523ecc05a087ba937f0df0"
   },
   "note": "The full patch applies to Linux 2.0.40. files contains the expected SHA-256 of every output source file; inputs records upstream and MkLinux provenance."
 }
