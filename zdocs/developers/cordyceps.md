@@ -19,6 +19,9 @@ Two sources describe this hardware:
   `Power Macintosh Performa (unsupported) class machine`, and the family is
   absent from the DR3 release notes' machine list.
 
+See [cordyceps-handoff.md](cordyceps-handoff.md) for what currently runs, how
+to launch it and which approaches are already known not to work.
+
 ## Custom ICs
 
 | IC | Role | Emulated by |
