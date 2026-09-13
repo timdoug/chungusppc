@@ -42,8 +42,10 @@ ValkyrieVideo::ValkyrieVideo(const uint32_t base_addr) : VideoCtrlBase() {
         gMachineObj->get_comp_by_type(HWCompType::MEM_CTRL));
 
     // add MMIO region for VRAM
-    mem_ctrl->add_ram_region(Valkyrie::VRAM_BASE, DRAM_CAP_1MB);
-    this->vram_ptr = mem_ctrl->get_region_hostmem_ptr(Valkyrie::VRAM_BASE);
+    uint32_t vram_base = (base_addr == Valkyrie::REGBASE_CORDYCEPS) ?
+        Valkyrie::VRAM_BASE_CORDYCEPS : Valkyrie::VRAM_BASE;
+    mem_ctrl->add_ram_region(vram_base, DRAM_CAP_1MB);
+    this->vram_ptr = mem_ctrl->get_region_hostmem_ptr(vram_base);
 
     // add MMIO region for the configuration and status registers
     mem_ctrl->add_mmio_region(base_addr + Valkyrie::CONTROL_OFFSET, 0x1000, this);
