@@ -316,8 +316,10 @@ The machines that currently work the best are the Power Mac 6100, the Power Mac 
 Early implementations of the iMac G3, Power Mac G3 Blue and White, and Apple Pippin are also present.
 
 The Power Macintosh 5200 (`pm5200`) and Performa 6200 (`pm6200`) are new. They
-boot the ROM to the "insert disk" screen, with a working mouse, but booting
-from an attached disk does not work yet, so expect to do some bring-up work.
+boot the ROM to the "insert disk" screen with a working mouse, and will boot
+Mac OS off an IDE image, but only if the image does not also end up on the SCSI
+bus - `--hdd_img` attaches it to both, and the SCSI side stalls. Give them
+`--rambank1_size 32`; the 8 MB default is not enough to finish booting.
 See the [Cordyceps notes](../developers/cordyceps.md) for the address map and
 for the guesses that a full boot would confirm or disprove.
 
