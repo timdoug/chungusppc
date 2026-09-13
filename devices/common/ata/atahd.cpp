@@ -227,6 +227,21 @@ int AtaHardDisk::perform_command() {
         this->prepare_xfer(ATA_HD_SEC_SIZE, ATA_HD_SEC_SIZE);
         this->signal_data_ready();
         break;
+    // The sector buffer is directly readable and writable. Apple's ATA manager
+    // uses the pair to work out how wide a data transfer the interface will
+    // take, and refuses to use a drive that rejects them.
+    case WRITE_BUFFER:
+        this->data_ptr     = (uint16_t *)this->data_buf;
+        this->cur_data_ptr = this->data_ptr;
+        this->post_xfer_action = [](){}; // the buffer is not backed by the image
+        this->prepare_xfer(ATA_HD_SEC_SIZE, ATA_HD_SEC_SIZE);
+        this->signal_data_ready();
+        break;
+    case READ_BUFFER:
+        this->data_ptr = (uint16_t *)this->data_buf;
+        this->prepare_xfer(ATA_HD_SEC_SIZE, ATA_HD_SEC_SIZE);
+        this->signal_data_ready();
+        break;
     case SET_FEATURES:
         switch (this->r_features) {
         case 2:
