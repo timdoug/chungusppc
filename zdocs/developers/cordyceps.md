@@ -74,12 +74,32 @@ storage passes the test; the emulator has no caches to keep coherent.
 ## Interrupts
 
 There is no interrupt controller register of the kind AMIC provides; the VIAs
-drive 68k-style autovector levels. The request towards the 603 is *latched*:
-the ROM's handler at `0x40307358` acknowledges Capella at `+0x1C` and returns
-without touching whatever interrupted, so a level-driven line re-enters the
-handler forever. The latch re-arms when a new source asserts, and the request
-also drops once the last source deasserts, as the priority lines do. (MkLinux
-acknowledges at `+0x18` instead; both addresses are accepted.)
+drive 68k-style autovector levels. Capella requests a 603 interrupt whenever
+the resulting priority level *changes away from the one the nanokernel last
+acknowledged* - including when it falls back to idle. (MkLinux acknowledges at
+`+0x18` rather than `+0x1C`; both addresses are accepted.)
+
+Getting that edge condition right matters, because the nanokernel's external
+interrupt handler is the only thing that ever writes the emulated 68k's
+interrupt priority level:
+
+```
+403158a8  lwz  r0,0x1C(r2)     ; r2 = 0x53000000, acknowledge...
+403158b4  stw  r0,0x1C(r2)     ; ...by writing zero back
+403158c8  lwz  r2,0x24(r2)     ; read the level Capella now reports
+403158d0  xori r2,r2,7         ; active low, so invert it
+40315904  rlwinm. r2,r2,0,29,31
+40315908  sth  r2,0(r3)        ; store it as the 68k IPL
+40315918  beq  +0x20           ; level 0: nothing to post
+```
+
+The explicit `level == 0` case is the tell: Capella has to interrupt on the
+falling edge too, or nothing would ever lower the stored IPL. Assert only on a
+rising edge and the 68k believes an interrupt is pending forever - its level-1
+autovector handler at `0x1C2F0` reads `IFR & IER`, gets zero, dispatches to
+`Lvl1DT[7]` (an `rts`), `rte`s, and is re-entered the instant the restored
+status register unmasks. The give-away in a trace is an endless alternation of
+VIA1 register D and register E reads and nothing else.
 
 ```
 IDE0/IDE1, VBL -> F108 IFR -> VIA2 slot IFR bit 0 -> VIA2 IFR bit 1 -> level 2
@@ -152,73 +172,56 @@ low bytes agree with MkLinux's `model_dep.c`, which expects `0x50`/`0x58` on
 which model is not yet known; `pm5200` and `pm6200` both default to `0x3250`
 and can be pointed elsewhere with the `machine_id` property.
 
-## Status and unverified guesses
+## Status
 
-POST passes, the 68k emulator runs, and the ROM programs Valkyrie for 640x480
-at 4 bpp and 66.6 Hz and fills the frame buffer with the 50% desktop dither.
-It then wedges inside the first VBL interrupt, which has been traced this far:
+Both machines boot the ROM all the way to the Mac OS "insert disk" screen: the
+grey desktop dither, a live mouse cursor driven by Cuda ADB autopolling, and
+the blinking floppy-with-question-mark. With nothing attached the 68k idles at
+ROM `0x3F230` with `SR = 0x2000`, which is the normal boot-wait loop.
 
-* The main thread is parked at ROM `0x3B0`, interrupted immediately after the
-  `move.w #$2000, sr` at `0x3AC` enabled interrupts, and never resumes. Its
-  exception frame sits at the top of the 68k stack and is never popped.
-* The stack holds exactly two nested level-1 frames and A7 stays put around
-  `0x3F5FA8`, so nothing is leaking frames — the outer handler simply never
-  finishes.
-* The VIA itself is healthy. CA1 ticks arrive at 60 Hz, the handler clears
-  them (IFR goes `0xC2` to `0x40`), roughly 74 interrupts a second are
-  asserted, and Capella's priority register reads idle when sampled.
-* The VBL handler at ROM `0x1DE96` clears CA1, bumps `Ticks`, sets bit 6 of
-  the `VBLQueue` flags at LowMem `0x160` as a re-entrancy guard, then drops
-  the interrupt mask to zero with `andi.w #$f8ff, sr`. The nesting is
-  therefore by design.
-* **That guard bit is still set when the machine is sampled**, so the outer
-  VBL never completed. Every later tick takes the `bne` at `0x1DEA8` and
-  leaves early, which is why the tick counter keeps advancing while nothing
-  else does.
-* The VBL queue is empty, `Lvl1DT` at LowMem `0x192` is populated sensibly,
-  and the spurious-interrupt slot `Lvl1DT[7]` is a plain `rts`, so the
-  dispatch itself is fine.
+Two bugs stood between POST and that screen, and both are worth remembering
+because neither announces itself:
 
-Measurements that narrow it further, and rule out the obvious suspects:
+* **The interrupt latch.** See the Interrupts section above. Asserting the 603
+  request only on a rising edge wedges the machine inside the first VBL, and
+  the symptom - a 68k handler re-entering itself forever - looks nothing like
+  an interrupt-delivery problem from the outside.
+* **Valkyrie register 5.** The ROM's "wait for vertical blanking" routine, in
+  RAM at `0x22942`, clears the latched VBL interrupt by writing 1 to register 4
+  and then spins on bit 0 of *register 5* until the next blanking interval sets
+  it again:
 
-* `Ticks` at LowMem `0x16A` advances 59.9 times a second, and the PowerPC
-  takes external interrupts at about the same rate. Neither the 68k nor the
-  603 is being stormed — the machine services exactly one tick per tick.
-* The VBL tail is two instructions: with an empty queue the handler branches
-  to `0x1DEF6`, does `bclr.b #$6,(a1)` and returns. The guard is never
-  cleared even so.
-* The path later ticks take is equally short: `0x1DE96` clears CA1, bumps
-  `Ticks`, finds the guard set at `0x1DEA8` and returns via the `rts` at
-  `0x1DE84`.
-* `Lvl1DT[7]`, where a spurious interrupt with no enabled flag set would
-  dispatch, is a plain `rts` at `0x4081C2E8`, so that path is harmless too.
-* The dispatch itself is correct. `movea.w $4001c338(pc,d0.w),a0` at
-  `0x1C306` carries extension word `0x0230`, whose scale field is 2, so the
-  table is indexed by `(IFR & IER) * 2`: CA1 lands on `0x0196`, which is
-  `Lvl1DT[1]` = `0x4081DE96`, the tick handler. Reading that table without
-  the scale factor makes every entry look off by one — it is not.
+  ```
+  2295E  movea.l $18(a3),a0     ; Valkyrie base from the driver globals
+  22962  move.b  #$1,$10(a0)    ; clear the latch (reg 4)
+  2296A  lea.l   $14(a0),a0
+  2296E  move.b  (a0),d0        ; read reg 5
+  22972  btst.b  #$0,d0
+  22976  beq.b   $2296e
+  ```
 
-So the outer VBL is wedged between the `andi.w #$f8ff, sr` at `0x1DEAA` and
-the `bclr` at `0x1DEF6`, and the nested frame's saved PC is `0x1DEAE` — the
-very next instruction after the mask drops. The handler lowers the mask and is
-immediately re-interrupted, over and over, which is exactly where the 68k PC
-samples cluster.
+  Register 5 is the readable side of the interrupt status; register 4 is the
+  write-to-clear side. Only implementing the read on register 4 leaves the ROM
+  spinning here forever.
 
-That is the shape of a 68k interrupt being re-delivered when the hardware is
-no longer asserting one: the VIA raises and clears cleanly 60 times a second,
-Capella's priority register reads idle when sampled, and the 603 takes only
-about 60 external interrupts a second, yet the 68k re-enters as soon as it
-drops its mask. The suspicion is that the nanokernel latches the 68k interrupt
-level somewhere and we never give it a reason to re-read it as idle — so the
-next thing to find is where the nanokernel gets that level from in the general
-path, which need not be the `+0x24` register the handler at `0x40307358` uses.
+Attaching an IDE disk with `--hdd_img` still fails. The drive is identified
+correctly (`C=4096, H=16, S=32` for a 1 GB image) and the question-mark icon
+stops, so a boot device is found, but roughly seven seconds in the 68k ends up
+at ROM `0x8D43E0`-`0x8D4BC2` with `SR = 0x2700` - every interrupt masked - in a
+loop that polls the SCC for a command character and uses VIA1 Timer 2 as its
+timeout. That is the ROM's serial monitor, so something on the disk path is
+faulting into it. Two threads worth pulling: the `Attempted to (read|write)
+unknown IDE register: 10/11/12` warnings, which are offsets `0x40`, `0x44` and
+`0x48` in the IDE page and are probably the F108's own timing registers, and
+whether the image needs an ATA driver partition rather than the SCSI one it was
+built with.
 
-Removing the CA1 tick entirely does clear the stuck guard, but only because it
-removes every tick, so it proves nothing beyond the wedge being tick-driven.
+A note on capture: `save_screenshot` used to read the frame back out of the
+locked SDL texture, which is write-only memory on the Metal backend and yields
+a uniformly black BMP on every machine. It now converts the guest framebuffer a
+second time into a surface we own. Any "the screen is black" conclusion drawn
+before that fix is worthless.
 
-For comparison, `pm6400` on the same emulator reaches the boot-wait loop
-within seconds and draws the grey desktop, the blinking disk icon and the
-cursor, idling at 68k PCs in RAM rather than in ROM interrupt handlers.
 
 Everything below is still a considered guess:
 
