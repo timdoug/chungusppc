@@ -7,10 +7,11 @@ which roads are already known to be dead ends.
 ## State
 
 `pm5200` and `pm6200` boot the ROM to the Mac OS "insert disk" screen with a
-working mouse, boot Mac OS from an IDE image, show the MkLinux booter's dialog,
-start the Mach microkernel, and run Linux 2.0.33-osfmach3 far enough to
-calibrate its delay loop, size memory, bring up the network stacks and
-initialise sound. It stops while reading the disk's partition descriptor.
+working mouse, boot Mac OS from an IDE image, hand over through the MkLinux
+booter, and reach a **MkLinux DR3 login prompt in about two minutes**, in
+colour, with the keyboard working. What is left is speed: MkLinux's SCSI driver
+spins hard enough that anything I/O bound - a forced `fsck`, an install - does
+not finish.
 
 **Run the Performa kernel.** Everything above depends on it - see
 [Which kernel](#which-kernel).
@@ -87,33 +88,42 @@ it:
 | `35f26ca0` | An absent device 1 reads as zeroes when device 0 is present, instead of the `0xFF7F` that means an empty channel and looks like a ready drive. |
 | `6b9709dd` | A software reset leaves device 0 selected, so a driver that resets to recover gets its disk back. |
 
+Machine-specific, all of it needed before the drive interrupt reached MkLinux:
+
+| Commit | Fix |
+| --- | --- |
+| `987c2f38` | VIA2 IFR writes clear a flag without needing bit 7; the slot cascade is not gated on a per-slot enable nothing writes; Valkyrie's vertical blank is on the slot register's video line, not the F108's. |
+| `155f6988` | Writing a bit to `0x50F1A100` dismisses that F108 flag, which is how MkLinux's handler does it. |
+| `ce469db0` | The Valkyrie palette answers at `+8` as well as `+4`, which is where MkLinux writes it. |
+
 ## The blocker
 
-Linux stops in `mac_label.c`, between `Reading descriptor` and
-`Re-reading descriptor`, on a read that never completes. The last command the
-disk sees is a RECALIBRATE.
+Speed. MkLinux's SCSI driver issues around half a million `CLEAR_FIFO` commands
+a second from `0x002C8128`, inside a retry loop at `0x002C88DC`-`0x002C8984`
+that spins on a counter at `+0x28` of its transfer descriptor. Booting a clean
+filesystem still takes two minutes, but a forced `fsck` never finishes, so the
+machine cannot currently be installed to or used for real work.
 
-The immediate cause is in the port, not the emulator. MkLinux's `wdc` driver
-picks its ATA register spacing from `powermac_info.class` and handles PERFORMA
-correctly, but the ATAPI accessors beside it test only for
-`POWERMAC_CLASS_POWERBOOK` and so use the sixteen byte spacing on a Performa -
-writing Device/Head to `0x50F1A060` and commands to `0x50F1A070`, which nothing
-decodes. The disassembly is in [cordyceps.md](cordyceps.md#where-the-performa-kernel-gets-to).
-The practical consequence is that after `wdc` probes the absent device 1, the
-ATAPI probe's deselect never lands.
+Gatwood's README does say `SCSI is working, but rather slow... partially a lack
+of pseudo-DMA code`, so some of this is the port. Half a million commands a
+second is worth confirming against that expectation before accepting it: the
+worker the loop calls is at `0x002C9908`, and it reports progress by storing
+the descriptor's remaining count through the pointer in `r6`.
 
-Two things to work out from there: whether the RECALIBRATE interrupt is reaching
-Mach at all (it goes `IntSrc::IDE0` → `F108_INT_IDE0` → the VIA2 slot register →
-CPU, and Mach's `performa_interrupt_initialize` never writes VIA2's IER), and
-whether the ATAPI spacing wants patching out of the kernel the way
-`valkyrie_probe` did. The kernel's own
-`Generated fake interrupt to fix IDE hang.` string suggests lost IDE interrupts
-were a known problem on this hardware.
+Two other things are known wrong and are not in the way of a boot:
 
-Worth knowing: the family was supported but barely tested - the README says only
-the 6214 was ever tried. Expect more holes. `floppy/grcswimiiihal.c` routes
-floppy access through AMIC DMA calls that do not apply here, and
-`PERFORMA_CUDA_BASE_PHYS` is `0x50F16000`, the floppy base on the PDM machines.
+* **The ATAPI probe uses the wrong register spacing** - MkLinux's ATAPI
+  accessors pick four byte spacing only for `POWERMAC_CLASS_POWERBOOK`, so on a
+  Performa they write Device/Head to `0x50F1A060` and commands to `0x50F1A070`,
+  which nothing decodes. The disassembly is in
+  [cordyceps.md](cordyceps.md#where-the-performa-kernel-gets-to). The IDE disk
+  is not usable from MkLinux.
+* **Sound is not supported by the port at all**, per its own README.
+
+If the guest's root filesystem is left dirty - which killing the emulator does -
+every subsequent boot forces an `fsck` that will not finish. Clearing
+`s_state` to 1 in the ext2 superblock, 1024 bytes into the `Apple_UNIX_SVR2`
+partition, gets back to a bootable disk.
 
 ## Do not repeat these
 
