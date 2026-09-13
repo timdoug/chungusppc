@@ -148,9 +148,11 @@ enum ATA_Cmd : uint8_t {
     WRITE_DMA_NR                         = 0xCB,
     STANDBY_IMMEDIATE                    = 0xE0,
     IDLE_IMMEDIATE                       = 0xE1,
+    READ_BUFFER                          = 0xE4,
     CHECK_POWER_MODE                     = 0xE5,
     SLEEP                                = 0xE6,
     FLUSH_CACHE                          = 0xE7, // ATA-5
+    WRITE_BUFFER                         = 0xE8,
     WRITE_BUFFER_DMA                     = 0xE9,
     READ_BUFFER_DMA                      = 0xEB,
     IDENTIFY_DEVICE                      = 0xEC,
