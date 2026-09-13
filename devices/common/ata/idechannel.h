@@ -71,6 +71,7 @@ protected:
 
 private:
     int             cur_dev = 0;
+    uint8_t         dev_ctrl = 0;
     AtaInterface*   devices[2];
 
     std::unique_ptr<AtaInterface>   device_stub;

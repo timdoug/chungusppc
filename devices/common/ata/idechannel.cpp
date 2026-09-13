@@ -95,6 +95,16 @@ void IdeChannel::write(const uint8_t reg_addr, const uint32_t val, const int siz
         this->cur_dev = (val >> 4) & 1;
     }
 
+    // A software reset leaves device 0 selected: the signature both devices
+    // load on the way out of it has a Device/Head of zero. A driver that
+    // resets to get itself unstuck expects to find its disk again afterwards
+    // without selecting it a second time.
+    if (reg_addr == DEV_CTRL) {
+        if ((this->dev_ctrl & ATA_CTRL::SRST) && !(val & ATA_CTRL::SRST))
+            this->cur_dev = 0;
+        this->dev_ctrl = val;
+    }
+
     // redirect register writes to both devices
     for (auto& dev : this->devices) {
         if (reg_addr == DATA && size == 4) {
