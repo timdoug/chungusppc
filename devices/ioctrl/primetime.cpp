@@ -432,6 +432,12 @@ void PrimeTimeTwo::ack_cpu_int(uint8_t level_mask, uint8_t irq_line_state)
         }
     } else {
         this->cpu_int_lines &= ~level_mask;
+        // The priority lines go idle once the last source deasserts. Holding
+        // the request until the next Capella acknowledge would re-enter the
+        // 68k handler on every rte, nesting exception frames until the stack
+        // runs into the heap.
+        if (!this->cpu_int_lines)
+            this->clear_cpu_int();
     }
 }
 
