@@ -52,7 +52,9 @@ build, installation, and cleanup commands.
 * **AWACS:** enable the existing sound driver and convert little-endian stereo
   into its scratch buffer. In-place conversion changed OSS fragments, so a
   fragment submitted again after drain/restart was byte-swapped twice on
-  the 6100, whose AWACS lacks hardware byte swapping.
+  the 6100, whose AWACS lacks hardware byte swapping. Preserve unsigned stereo
+  input too, and count 16-bit mono samples as `count / 2`; the original loops
+  read and wrote past their buffers.
 * **Serial:** bind each reader thread to the Mach device port it opened.
   A pending read from a closed port must not hang up a newly opened tty in
   the same slot. Respect `CLOCAL` when receiving a carrier-drop event.
