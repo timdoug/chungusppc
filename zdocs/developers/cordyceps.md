@@ -204,17 +204,43 @@ because neither announces itself:
   write-to-clear side. Only implementing the read on register 4 leaves the ROM
   spinning here forever.
 
-Attaching an IDE disk with `--hdd_img` still fails. The drive is identified
-correctly (`C=4096, H=16, S=32` for a 1 GB image) and the question-mark icon
-stops, so a boot device is found, but roughly seven seconds in the 68k ends up
-at ROM `0x8D43E0`-`0x8D4BC2` with `SR = 0x2700` - every interrupt masked - in a
-loop that polls the SCC for a command character and uses VIA1 Timer 2 as its
-timeout. That is the ROM's serial monitor, so something on the disk path is
-faulting into it. Two threads worth pulling: the `Attempted to (read|write)
-unknown IDE register: 10/11/12` warnings, which are offsets `0x40`, `0x44` and
-`0x48` in the IDE page and are probably the F108's own timing registers, and
-whether the image needs an ATA driver partition rather than the SCSI one it was
-built with.
+## Booting from disk
+
+With an image on the IDE bus the ROM boots Mac OS off it and hands over to
+whatever is on the volume. Three things in the shared ATA and SCSI code had to
+be fixed to get there, none of them specific to this machine:
+
+* **32-bit PIO on the data port.** The ROM's ATA driver reads the data register
+  with `move.l (a0),(a1)+` unrolled eight times, and a 32-bit access to a
+  16-bit port moves two words - the first of them at the lower address, so the
+  high half for a big endian guest. `IdeChannel::read` ignored the access size
+  and returned a single word, which handed the driver every other word of the
+  IDENTIFY response padded with zeroes.
+* **READ BUFFER and WRITE BUFFER.** Apple's ATA manager writes a pattern into
+  the drive's sector buffer and reads it back to work out how wide a transfer
+  the interface will take. A drive that rejects the pair is not used at all:
+  ours set ERR, and the driver polled the status register forever.
+* **A null DMA channel.** These machines have no DMA engine, so nothing ever
+  calls `Sc53C94::connect` and `channel_obj` stays null. `sequencer()`
+  dereferenced it in `XFER_BEGIN` as soon as a target was selected.
+
+What a successful boot looks like: IDENTIFY, the buffer test, INITIALIZE DEVICE
+PARAMETERS, then reads of sectors 1 to 4 - the Apple partition map, whose first
+bytes come back as `45 52 02 00`, the `ER` signature and a 512-byte block size -
+and from there several hundred reads across the volume.
+
+Two things to know before trying it:
+
+* **8 MB of RAM is not enough.** The boot runs off the end of memory, logging
+  accesses to `0x00800000`, and dies. Use `--rambank1_size 32`.
+* **`--hdd_img` attaches the image to *both* buses.** The property is global and
+  `AtaHardDisk` and `ScsiBus` both consume it, so the image also appears as SCSI
+  ID 0. The ROM finds it, selects it, and stalls: the sequencer parks in
+  `RCV_DATA` with a full FIFO while the driver polls the 53C94 status register,
+  because with no DMA channel nothing tells the processor to drain the FIFO
+  through the handshake port at `0x50F10100`. Asserting DRQ from `rcv_data()`
+  is not sufficient - the driver is not watching that bit. Until the pseudo-DMA
+  receive path is finished, this is the remaining blocker for a disk boot.
 
 A note on capture: `save_screenshot` used to read the frame back out of the
 locked SDL texture, which is write-only memory on the Metal backend and yields
