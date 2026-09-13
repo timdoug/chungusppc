@@ -297,9 +297,26 @@ matter which ID it sits at:
 --hdd_img macos.img --scsi_hdd_img macos.img:mklinux.img --rambank1_size 32
 ```
 
-### The branch to `0x40802xxx`
+### Use the right kernel
 
-The kernel then dies on a wild branch into 68k ROM space:
+MkLinux gained real support for this family on 31 July 2000, and the R2 disc
+ships the result in `MkLinux-install/Place in Extensions Folder/Performas Use
+This!/`: a `Mach Kernel` built 5 August 2000, alongside a `README-PERFORMA` with
+David Gatwood's announcement. Its caveats are worth reading first - no sound,
+"SCSI is working, but rather slow... partially a lack of pseudo-DMA code", and
+serial implemented but untested.
+
+That kernel goes in the System Folder's Extensions folder in place of the stock
+one. It is 1,612,796 bytes against the 1,350,052 of the generic R2 kernel, so it
+cannot be dropped into a disk image by overwriting; copy it in the guest, or
+reallocate the fork.
+
+None of this is optional. The generic kernel, and anything rebuilt from the
+retained 12/24/1999 osfmk snapshot, predates the whole Performa port.
+
+### The branch to `0x40802xxx` (pre-2000 kernels only)
+
+A kernel from before that work dies on a wild branch into 68k ROM space:
 
 ```
 0022F480  mr    r31,r3
@@ -358,21 +375,72 @@ Free region start 0x005b8000 end 0x02000000
 vm_page_bootstrap: 7418 free pages
 ```
 
-and stops there. Sampling the processor shows it alternating between `0x300`,
-the DSI vector, and `0x2024`/`0x206C` in the exception entry code the line above
-mapped at `0x2000`: the exception path is itself faulting, at `0x263A68`,
-`lwz r3,0x14C(r3)` in the sequence that picks a thread's kernel stack out of
-`per_proc_info`. `lr` is `0x2664B0`, the return address of an indirect call
-through the interrupt dispatch vector a few instructions earlier - the one whose
-other arm panics with `Unsupported class for interrupt dispatch`. That is the
-next thing to chase.
+and stops there, in a fault loop between the DSI vector at `0x300` and the
+exception entry code at `0x2000`.
 
-Do not reach for `mach_options=-r` to get a serial console out of this. The
-option does arrive - the booter's dialog prints `Mach Options: -r` and
-`parse_args()` acts on it - but it switches `cons_ops_index` to the SCC before
-`initialize_serial()` has filled in `scc_softc`, so the first `printf` lands in
-`scc_putc()`, which spins forever waiting for `SCC_RR0_TX_EMPTY` from a channel
-whose register pointer is still null. The video console is the one that works.
+Do not reach for `mach_options=-r` to get a serial console out of a kernel of
+that vintage. The option does arrive - the booter's dialog prints
+`Mach Options: -r` and `parse_args()` acts on it - but it switches
+`cons_ops_index` to the SCC before `initialize_serial()` has filled in
+`scc_softc`, so the first `printf` lands in `scc_putc()`, which spins forever
+waiting for `SCC_RR0_TX_EMPTY` from a channel whose register pointer is still
+null. The video console is the one that works.
+
+### Where the Performa kernel gets to
+
+Much further. Mach comes up, hands over, and Linux 2.0.33-osfmach3 runs:
+
+```
+Mach 3.0 VERSION(GENERIC_8.): root <osfmk>; Sat Aug  5 17:23:47 PDT 2000; ...
+Emulating 32 MB of physical memory from 0x142c0000 to 0x162c0000
+using video mode 3 (640x480 at 50Hz interlaced), 8 bits/pixel
+Console: colour osfmach3_vc 80x30, 1 virtual console (max 63)
+Calibrating delay loop.. ok - 80.49 BogoMIPS
+Memory: 28140k/32768k available (1176k kernel code, 444k reserved, 42315k data)
+Linux version 2.0.33-osfmach3 (gilbert@venus.apple.com) ...
+MkLinux Serial Driver version 1.01
+Sound initialization complete
+```
+
+It then stops in `mac_label.c`, after `printf("Reading descriptor\n")` and
+before the matching `Re-reading descriptor`, waiting on a read that never
+finishes. The last thing the disk sees is a RECALIBRATE.
+
+Two emulator bugs were in the way of getting that far, both about how an absent
+device 1 behaves, and both fixed: an absent device in a device-0-only
+configuration has to read as zeroes rather than as the empty-channel `0xFF7F`,
+and a software reset has to leave device 0 selected.
+
+What is left is a hole in the port. The `wdc` driver picks its register spacing
+from the machine class and gets it right:
+
+```
+002D0BE0  lwz   r0,-0x30A8(r9)   ; powermac_info.class
+002D0BE4  cmpwi r0,2             ; PERFORMA
+002D0BE8  beq   0x002D0BF4       ; ... four byte spacing, control at +0x38
+002D0BEC  cmpwi r0,4             ; POWERBOOK
+002D0BF0  bne   0x002D0C4C       ; ... otherwise sixteen byte spacing
+```
+
+but the ATAPI accessors alongside it test for `POWERMAC_CLASS_POWERBOOK` alone,
+in a branchless select:
+
+```
+002D7568  lwz   r0,-0x30A8(r9)   ; powermac_info.class
+002D756C  xori  r11,r0,4         ; zero iff POWERBOOK
+   ...                           ; r11 = 0 for POWERBOOK, -1 otherwise
+002D7580  addi  r9,r31,0x60      ; sixteen byte spacing
+002D7584  addi  r0,r31,0x18      ; four byte spacing
+002D7588  and   r9,r9,r11
+002D758C  andc  r0,r0,r11
+002D7590  or    r11,r9,r0        ; pick one
+```
+
+So on a Performa the ATAPI probe writes Device/Head to `0x50F1A060` and its
+command to `0x50F1A070`, neither of which the F108 decodes - the ROM's own
+driver, which is the authority for this hardware, uses the four byte layout
+throughout. The probe is therefore invisible, and in particular the write that
+deselects device 1 and goes back to the disk never lands.
 
 Everything below is still a considered guess:
 
