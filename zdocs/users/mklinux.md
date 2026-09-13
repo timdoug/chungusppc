@@ -359,6 +359,35 @@ also checked on the 6500 at 640×480 in Thousands, including terminal output
 and scrolling; X remains untested on the 5500 and TAM. As on the 6400, there
 is currently no emulated Ethernet controller for these models.
 
+## Performa 5200 and 6200
+
+`pm5200` and `pm6200` reach a MkLinux DR3 login prompt, but only with the
+kernel MkLinux shipped for this family. Support for the 52xx/53xx/62xx/63xx
+arrived on 31 July 2000, after DR3, and `MkLinux R2 RC5.toast` carries the
+result in a folder named **Performas Use This!** alongside a `README-PERFORMA`
+with the announcement. Copy its `Mach Kernel` into the System Folder's
+Extensions folder in place of the usual one. Nothing else works: the generic
+kernel crashes in `valkyrie_probe` before it can print anything.
+
+```
+chungusppc -r -m pm6200 \
+    -b "63ABFD3F - Power Mac & Performa 5200,5300,6200,6300.ROM" \
+    --rambank1_size 32 --hdd_img macos.img \
+    --scsi_hdd_img "macos.img:mklinux.img"
+```
+
+Mac OS boots from the IDE disk, so `--hdd_img` is that disk and the SCSI list
+repeats it only so that the MkLinux volume lands at the second SCSI ID, which
+is what `rootdev=/dev/sdb2` expects. 8 MB of RAM is not enough to finish a Mac
+OS boot.
+
+Expect roughly two minutes to the login prompt. The port's own caveats apply
+and are not emulator problems: no sound, and SCSI "rather slow... partially a
+lack of pseudo-DMA code". In practice anything I/O heavy, including a forced
+`fsck`, is slower than it is worth waiting for, so this is a boot rather than a
+usable system. The IDE disk is not reachable from MkLinux either - its ATAPI
+probe uses a register spacing this machine does not decode.
+
 ## IDE boot
 
 The 5400, 6400, 5500, 6500 and TAM can boot Mac OS 7.6.1, Mach and Linux 2.0.40
