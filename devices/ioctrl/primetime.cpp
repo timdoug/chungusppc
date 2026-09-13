@@ -211,11 +211,12 @@ void PrimeTimeTwo::via2_write(uint32_t offset, uint8_t value)
 {
     switch ((offset >> 9) & 0xF) {
     case VIA_IFR:
-        // writing "1" to a flag with bit 7 set clears it
-        if (value & 0x80) {
-            this->via2_ifr &= ~(value & 0x7F);
-            this->update_via2_irq();
-        }
+        // Writing a one to a flag clears it. Bit 7 is the read-only summary,
+        // not the set/clear selector the IER uses: MkLinux's slot handler
+        // dismisses its interrupt with a plain 0x02, and its interrupt setup
+        // clears the register with 0x7F.
+        this->via2_ifr &= ~(value & 0x7F);
+        this->update_via2_irq();
         break;
     case VIA_IER:
         if (value & 0x80)
@@ -315,9 +316,11 @@ uint64_t PrimeTimeTwo::register_dev_int(IntSrc src_id)
 
     case IntSrc::IDE0      : return uint64_t(F108_INT_IDE0) << F108_INT_SHIFT;
     case IntSrc::IDE1      : return uint64_t(F108_INT_IDE1) << F108_INT_SHIFT;
-    // MkLinux registers its VBL handler on the F108 flag. The VIA2 slot
-    // register also has a "video" bit; which one Valkyrie drives is unverified.
-    case IntSrc::VALKYRIE  : return uint64_t(F108_INT_VBL)  << F108_INT_SHIFT;
+    // Valkyrie drives the VIA2 slot register's video line. Putting it on the
+    // F108's "Keystone" flag instead, which MkLinux registers its own VBL
+    // handler on, makes Mac OS stop with "unserviceable slot interrupt": the
+    // F108 output arrives as slot 0 and nothing claims it.
+    case IntSrc::VALKYRIE  : return uint64_t(SLOT_INT_VIDEO) << SLOT_INT_SHIFT;
     default:
         ABORT_F("%s: unknown interrupt source %d", this->name.c_str(), src_id);
     }
@@ -373,7 +376,8 @@ void PrimeTimeTwo::ack_f108_int(uint8_t f108_int, uint8_t irq_line_state)
 
 void PrimeTimeTwo::update_f108_irq()
 {
-    uint8_t new_irq = !!(this->f108_ifr & ~(F108_INT_ENABLE | F108_INT_IRQ));
+    uint8_t flags   = this->f108_ifr & ~(F108_INT_ENABLE | F108_INT_IRQ);
+    uint8_t new_irq = !!(flags && (this->f108_ifr & F108_INT_ENABLE));
     this->f108_ifr = (this->f108_ifr & ~F108_INT_IRQ) | (new_irq ? F108_INT_IRQ : 0);
     if (new_irq != this->f108_irq) {
         this->f108_irq = new_irq;
@@ -390,7 +394,11 @@ void PrimeTimeTwo::ack_slot_int(uint8_t slot_int, uint8_t irq_line_state)
     else
         this->slot_ifr |= slot_int;
 
-    uint8_t new_irq = !!(~this->slot_ifr & this->slot_ier & 0x7F);
+    // Any asserted slot line raises VIA2's "any slot" flag; the masking that
+    // matters is VIA2's own IER. There is no per-slot enable to consult -
+    // MkLinux never writes one, and its handler reaches the cascaded F108 by
+    // way of VIA2 bit 1 alone.
+    uint8_t new_irq = !!(~this->slot_ifr & 0x7F);
     if (new_irq != this->slot_irq) {
         this->slot_irq = new_irq;
         this->ack_via2_int(VIA2_INT_ALL_SLOT, new_irq);
