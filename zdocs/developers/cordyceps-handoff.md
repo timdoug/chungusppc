@@ -8,17 +8,20 @@ which roads are already known to be dead ends.
 
 `pm5200` and `pm6200` boot the ROM to the Mac OS "insert disk" screen with a
 working mouse, boot Mac OS from an IDE image, show the MkLinux booter's dialog,
-and start the Mach microkernel, which prints its banner and its memory map to
-the Valkyrie console and stops after `vm_page_bootstrap`. That is the blocker,
-and it now needs one patch applied to the guest's kernel to reach - see
-[Patch the guest kernel](#patch-the-guest-kernel).
+start the Mach microkernel, and run Linux 2.0.33-osfmach3 far enough to
+calibrate its delay loop, size memory, bring up the network stacks and
+initialise sound. It stops while reading the disk's partition descriptor.
+
+**Run the Performa kernel.** Everything above depends on it - see
+[Which kernel](#which-kernel).
 
 ## Running it
 
 ```
 ./build/bin/chungusppc.app/Contents/MacOS/chungusppc \
     -b "63ABFD3F - Power Mac & Performa 5200,5300,6200,6300.ROM" -m pm6200 \
-    --hdd_img macos.img --scsi_hdd_img macos.img:mklinux.img --rambank1_size 32
+    --hdd_img macos-performa.img \
+    --scsi_hdd_img macos-performa.img:mklinux.img --rambank1_size 32
 ```
 
 Three things that are not optional:
@@ -27,32 +30,36 @@ Three things that are not optional:
   through the Mac OS boot, logging accesses to `0x00800000`, and dies.
 * **The MkLinux volume has to be the second SCSI disk.** Its booter is set to
   `/dev/sdb2`, and MkLinux names disks in discovery order rather than by ID, so
-  a disk on its own is `sda` whichever ID it sits at. Hence `macos.img` first in
-  `--scsi_hdd_img`, even though the machine boots Mac OS from IDE.
+  a disk on its own is `sda` whichever ID it sits at. Hence the Mac OS volume
+  first in `--scsi_hdd_img`, even though the machine boots Mac OS from IDE.
 * **`--hdd_img` is the IDE disk.** `ScsiBus` no longer takes it, so SCSI disks
   go in `--scsi_hdd_img` and a second IDE disk in `--hdd2_img`.
 
-## Patch the guest kernel
+## Which kernel
 
-MkLinux's `valkyrie_probe()` calls `kmem_alloc()` from `initialize_screen()`,
-which `go()` runs long before the VM system exists, and the resulting
-`zalloc(NULL)` branches through a 68k exception vector into ROM. The fix is in
-[`valkyrie-probe-performa.patch`](../../mklinux-selfhost/fixed-src/valkyrie-probe-performa.patch);
-the reasoning is in [cordyceps.md](cordyceps.md#the-branch-to-0x40802xxx).
+MkLinux added support for the 52xx/53xx/62xx/63xx family on **31 July 2000**, and
+the R2 disc ships the result:
 
-Rebuilding the kernel is the real answer. To try it without one, patch the
-`Mach Kernel` file in place: the PERFORMA arm of `valkyrie_probe` is at kernel
-address `0x0027E5D4`, and turning the `cmpwi`/`bne` pair that guards the
-allocation into `li r3,1` / `b` to the epilogue skips it.
-
-```python
-old = bytes.fromhex('38893978' '900A397C' '2C0B0000' '4082002C' '3D200041')
-new = bytes.fromhex('38893978' '900A397C' '38600001' '480000B4' '3D200041')
+```
+MkLinux R2 RC5.toast
+└── MkLinux-install/Place in Extensions Folder/
+    ├── Mach Kernel                    1350052   generic, no Performa support
+    └── Performas Use This!/
+        ├── Mach Kernel                1612796   built 5 Aug 2000 - use this one
+        └── README-PERFORMA               2750   the announcement and its caveats
 ```
 
-That byte string occurs once in the disk image. Addresses are for the Mach
-kernel built 2026-09-11; check the disassembly before trusting them on another
-build.
+Put that kernel in the System Folder's Extensions folder. It is bigger than
+what it replaces, so it cannot be dropped into a disk image by overwriting the
+old fork; copy it in the guest, or reallocate.
+
+Anything older walks into bugs that were fixed by that work - most immediately
+`valkyrie_probe()` calling `kmem_alloc()` from `initialize_screen()`, long
+before the VM system exists, which lands in `zalloc(NULL)` and branches through
+a 68k exception vector into ROM. That includes **anything rebuilt from the
+retained 12/24/1999 osfmk snapshot**, which predates the Performa port entirely;
+[`valkyrie-probe-performa.patch`](../../mklinux-selfhost/fixed-src/valkyrie-probe-performa.patch)
+fixes that one instance if you must build from those sources.
 
 ## What had to be fixed
 
@@ -77,28 +84,35 @@ it:
 | `05e0344f` | Screenshots convert the framebuffer again instead of reading back the locked SDL texture, which is write-only on Metal. |
 | `5a0f9124` | A long access to the SCSI handshake port moves two words. Returning one lost half of every transfer, and Mac OS spun in `SyncWait` forever. |
 | `c3528e54` | DATA_OUT through the handshake port: the sequencer waits in `SEND_DATA` and pushes each FIFO load to the target instead of overflowing the FIFO. |
+| `35f26ca0` | An absent device 1 reads as zeroes when device 0 is present, instead of the `0xFF7F` that means an empty channel and looks like a ready drive. |
+| `6b9709dd` | A software reset leaves device 0 selected, so a driver that resets to recover gets its disk back. |
 
 ## The blocker
 
-Mach stops after `vm_page_bootstrap: 7418 free pages`. Sampling the processor
-shows it alternating between `0x300`, the DSI vector, and `0x2024`/`0x206C` in
-the exception entry code mapped at `0x2000`: the exception path is faulting on
-itself, at `0x263A68`, `lwz r3,0x14C(r3)`, where it picks a thread's kernel
-stack out of `per_proc_info`. `lr` is `0x2664B0`, immediately after an indirect
-call through the interrupt dispatch vector - the arm that panics with
-`Unsupported class for interrupt dispatch` is the other one, so the Performa
-dispatch is installed and being entered.
+Linux stops in `mac_label.c`, between `Reading descriptor` and
+`Re-reading descriptor`, on a read that never completes. The last command the
+disk sees is a RECALIBRATE.
 
-`interrupt_performa.c` is the file to read first: it wants Capella at
-`PERFORMA_CAPELLA_BASE_PHYS`, acknowledges through `CAPELLA_INT_REG_OFFSET`,
-writes `PERFORMA_ICR`, and cascades VIA1/VIA2/F108. Check those addresses
-against what `PrimeTimeTwo` and `F108` actually decode, and check that the
-interrupt is not arriving before Mach has a stack to take it on.
+The immediate cause is in the port, not the emulator. MkLinux's `wdc` driver
+picks its ATA register spacing from `powermac_info.class` and handles PERFORMA
+correctly, but the ATAPI accessors beside it test only for
+`POWERMAC_CLASS_POWERBOOK` and so use the sixteen byte spacing on a Performa -
+writing Device/Head to `0x50F1A060` and commands to `0x50F1A070`, which nothing
+decodes. The disassembly is in [cordyceps.md](cordyceps.md#where-the-performa-kernel-gets-to).
+The practical consequence is that after `wdc` probes the absent device 1, the
+ATAPI probe's deselect never lands.
 
-Worth knowing: MkLinux's Performa port is real but Apple never validated it, and
-the `valkyrie_probe` bug above proves the class was never run. Expect more holes
-in the port, not just in the emulator. `floppy/grcswimiiihal.c` routes floppy
-access through AMIC DMA calls that do not apply here, and
+Two things to work out from there: whether the RECALIBRATE interrupt is reaching
+Mach at all (it goes `IntSrc::IDE0` → `F108_INT_IDE0` → the VIA2 slot register →
+CPU, and Mach's `performa_interrupt_initialize` never writes VIA2's IER), and
+whether the ATAPI spacing wants patching out of the kernel the way
+`valkyrie_probe` did. The kernel's own
+`Generated fake interrupt to fix IDE hang.` string suggests lost IDE interrupts
+were a known problem on this hardware.
+
+Worth knowing: the family was supported but barely tested - the README says only
+the 6214 was ever tried. Expect more holes. `floppy/grcswimiiihal.c` routes
+floppy access through AMIC DMA calls that do not apply here, and
 `PERFORMA_CUDA_BASE_PHYS` is `0x50F16000`, the floppy base on the PDM machines.
 
 ## Do not repeat these
@@ -125,8 +139,17 @@ access through AMIC DMA calls that do not apply here, and
   `initialize_serial()` has filled in `scc_softc`. The first `printf` then hangs
   in `scc_putc()` waiting for `SCC_RR0_TX_EMPTY` from a channel whose register
   pointer is null. Use the video console; it works.
-* **The Mach kernel in `macos.img` is the local rebuild**, not DR3's. Its
-  version string dates it, and addresses quoted here are from that build.
+* **Check which kernel a disk image is carrying before believing anything.**
+  The version string is in the data fork - `Mach 3.0 VERSION(...)` with a build
+  date - and the file is a 32-byte `MACH_BOOT_IMAGE` header, the kernel ELF,
+  then the bootstrap task's ELF. `macos.img` carries the local rebuild, which
+  is from sources that predate the Performa port; `macos-performa.img` carries
+  the 5 August 2000 one.
+* **Mach kernel addresses** map into that file as `addr - 0x200000 + 0x10010`
+  for text. The built-in debugger will disassemble the running kernel by
+  address, which is easier than carving the file, and it is the only PowerPC
+  disassembler to hand - the vendored capstone is built without the PPC
+  backend.
 
 ## Tooling notes
 
