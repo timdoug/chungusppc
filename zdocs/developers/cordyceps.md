@@ -179,10 +179,27 @@ It then wedges inside the first VBL interrupt, which has been traced this far:
   and the spurious-interrupt slot `Lvl1DT[7]` is a plain `rts`, so the
   dispatch itself is fine.
 
-The hang is therefore somewhere in the VBL handler after it lowers the mask
-and skips the empty queue, around ROM `0x1DEF6` onwards. Disassembling that
-tail properly — with Ghidra rather than the built-in disassembler, which
-misaligns in this region — is the next job.
+Measurements that narrow it further, and rule out the obvious suspects:
+
+* `Ticks` at LowMem `0x16A` advances 59.9 times a second, and the PowerPC
+  takes external interrupts at about the same rate. Neither the 68k nor the
+  603 is being stormed — the machine services exactly one tick per tick.
+* The VBL tail is two instructions: with an empty queue the handler branches
+  to `0x1DEF6`, does `bclr.b #$6,(a1)` and returns. The guard is never
+  cleared even so.
+* The path later ticks take is equally short: `0x1DE96` clears CA1, bumps
+  `Ticks`, finds the guard set at `0x1DEA8` and returns via the `rts` at
+  `0x1DE84`.
+* `Lvl1DT[7]`, where a spurious interrupt with no enabled flag set would
+  dispatch, is a plain `rts` at `0x4081C2E8`, so that path is harmless too.
+
+So the outer VBL is wedged in the handful of instructions between the
+`andi.w #$f8ff, sr` at `0x1DEAA` and the `bclr` at `0x1DEF6`, which on the
+face of it cannot block. Something in that window is not returning, and the
+68k PC samples cluster on exactly those addresses plus the dispatcher. The
+next step is to decode that window against the real 68k state — the emulator
+keeps it in the context block at `0x68FFF000` — rather than inferring it from
+snapshots taken at different times.
 
 For comparison, `pm6400` on the same emulator reaches the boot-wait loop
 within seconds and draws the grey desktop, the blinking disk icon and the
