@@ -273,46 +273,106 @@ deadlocks: the driver waits for terminal count and terminal count waits for the
 driver. `rcv_data()` now sets it when the bus side completes, for machines with
 no DMA channel only.
 
+Two more things were missing from that port. The driver switches from `move.w`
+to `move.l` once it has the buffer aligned, so the port has to move two words
+for a long access - the first one at the lower address, in the high half. Until
+it did, every transfer stopped exactly halfway and Mac OS spun forever in
+`SyncWait`, which is the ROM's SCSI Manager waiting on a request that had gone
+quiet. And DATA_OUT had no path at all: `XFER_BEGIN` did nothing without a DMA
+channel and `SeqState::SEND_DATA` was an empty case, so bytes piled into the
+sixteen byte FIFO until it overflowed. The sequencer now waits in `SEND_DATA`
+and pushes each FIFO load to the target.
+
 ## MkLinux
 
 Mac OS boots off the IDE disk, launches the MkLinux booter, and the booter hands
 off without crashing - but only once its root device actually exists.
 
-That took a while to establish because the crash looked like an emulator bug.
-The booter would branch to `0x4080281C` and die on an illegal instruction, and
-it did so whether or not a SCSI disk was attached, which seemed to rule the root
-device out. It did not: the root device was missing in *every* one of those
-runs. The call site explains the rest:
+The root device has to be there or the booter will not start. It is `/dev/sdb2`,
+the *second* SCSI disk, so the volume has to be at the second SCSI ID - MkLinux
+names disks in discovery order, not by ID, so one disk on its own is `sda` no
+matter which ID it sits at:
+
+```
+--hdd_img macos.img --scsi_hdd_img macos.img:mklinux.img --rambank1_size 32
+```
+
+### The branch to `0x40802xxx`
+
+The kernel then dies on a wild branch into 68k ROM space:
 
 ```
 0022F480  mr    r31,r3
-0022F484  lwz   r0,32(r31)     ; a method pointer from [r31+0x20]
+0022F484  lwz   r0,32(r31)     ; a function pointer from [r31+0x20]
 0022F488  cmpwi r0,0
 0022F48C  beq   +0x310         ; skip if null
 0022F490  mtlr  r0
 0022F494  blrl                 ; call it
 ```
 
-`r3` arrives as zero, so `r31` is zero and the load comes from address `0x20` -
-68k exception vector 8, the privilege violation vector, which holds
-`0x4080280C`. The booter then calls a 68k ROM vector as a PowerPC function. The
-null check one instruction earlier only guards against the field being zero, not
-against the object being zero. So the wild branch is the booter dereferencing a
-failed device lookup, not anything the emulator did wrong.
+`r3` arrives as zero, so the load comes from address `0x20` - 68k exception
+vector 8, the privilege violation vector, still holding what Mac OS left there -
+and the 603 branches to it and takes an ISI it cannot service. The null check one
+instruction earlier guards the field, not the object.
 
-Give it the disk it is looking for and the crash goes away:
+This is in the Mach kernel, not the booter. `0x22F460` is `zalloc()`: its caller
+reads a global that `zinit(0x68, ..., "vm objects")` fills in, which makes the
+global `vm_object_zone` and the caller `vm_object_allocate()`. Walking the stack
+back gives `kmem_alloc` → `kernel_memory_allocate` → `vm_object_allocate` →
+`zalloc(NULL)`, and above that a video board probe whose panic string is
+`valkyrie_probe: no memory available!`.
+
+So: `go()` calls `initialize_screen()`, which probes the video boards, long
+before `vm_mem_bootstrap()` has created `vm_object_zone`. `valkyrie_probe()`
+calls `kmem_alloc()` from there, on the `POWERMAC_CLASS_PERFORMA` path only.
+It cannot ever have worked. The node it allocates is not read back on that path
+either - `valkyrie_init()` uses `PERFORMA_VIDEO_CLUT` directly for this class -
+and the store through `valkyrie_node->addrs[0]` is a second null dereference,
+because `kmem_alloc` returns zeroed memory and `addrs` is a pointer. Dropping
+the whole allocation and returning TRUE is enough:
+[`valkyrie-probe-performa.patch`](../../mklinux-selfhost/fixed-src/valkyrie-probe-performa.patch).
+
+`PERFORMA_VIDEO_BASE` is `0x50F2A000` and `PERFORMA_VIDEO_CLUT` `0x50F24000`,
+which is exactly where `ValkyrieVideo` puts its control and CLUT regions.
+
+### Where it gets to
+
+With that patched into the guest's kernel, the microkernel comes up on the
+Valkyrie console:
 
 ```
---hdd_img macos.img --scsi_hdd_img macos.img:mklinux.img --rambank1_size 32
+Mach 3.0 VERSION(GENERIC_8.): root <osfmk>; ...
+MACH microkernel is booting on a Power Macintosh Performa (unsupported) class
+machine via Apple MkLinux Booter...
+mem_size = 32 M
+Mapping exception entry/exit 0x2000 to 0x2000 size 0x3000
+kernel: mapping virt 0x00200000 to phys 0x00200000 size 0xca000, prot=0x5<READ,EXEC>
+kernel: mapping virt 0x00400000 to phys 0x00400000 size 0x70000, prot=0x3<READ,WRITE>
+bootstrap: mapping virt 0x00471000 to phys 0x00471000 end 0x474000, prot=0x3<READ,WRITE>
+bootstrap: mapping virt 0x00473000 to phys 0x00473000 end 0x4a6000, prot=0x5<READ,EXEC>
+WARNING - bootstrap overlaps regions
+Free region start 0x00003000 end 0x00200000
+Free region start 0x002ca000 end 0x00400000
+Free region start 0x004a9000 end 0x004c0000
+Free region start 0x005b8000 end 0x02000000
+vm_page_bootstrap: 7418 free pages
 ```
 
-The root device in the booter is `/dev/sdb2`, the *second* SCSI disk, so the
-volume has to be at the second SCSI ID - MkLinux names them in discovery order,
-not by ID, so one disk on its own is `sda` no matter which ID it sits at.
+and stops there. Sampling the processor shows it alternating between `0x300`,
+the DSI vector, and `0x2024`/`0x206C` in the exception entry code the line above
+mapped at `0x2000`: the exception path is itself faulting, at `0x263A68`,
+`lwz r3,0x14C(r3)` in the sequence that picks a thread's kernel stack out of
+`per_proc_info`. `lr` is `0x2664B0`, the return address of an indirect call
+through the interrupt dispatch vector a few instructions earlier - the one whose
+other arm panics with `Unsupported class for interrupt dispatch`. That is the
+next thing to chase.
 
-From there the machine runs on without crashing and without reaching a console:
-no output, no video mode change, the display refresh still ticking. That is the
-next thing to chase, and it is a different problem from the branch.
+Do not reach for `mach_options=-r` to get a serial console out of this. The
+option does arrive - the booter's dialog prints `Mach Options: -r` and
+`parse_args()` acts on it - but it switches `cons_ops_index` to the SCC before
+`initialize_serial()` has filled in `scc_softc`, so the first `printf` lands in
+`scc_putc()`, which spins forever waiting for `SCC_RR0_TX_EMPTY` from a channel
+whose register pointer is still null. The video console is the one that works.
 
 Everything below is still a considered guess:
 
