@@ -276,6 +276,15 @@ void Sc53C94::pseudo_dma_write_word(uint16_t data) {
         if (!this->xfer_count) {
             this->status |= STAT_TC; // signal zero transfer count
             //this->cur_state = SeqState::XFER_END;
+            this->sequencer();       // send the tail of the transfer
+            if (!this->channel_obj) {
+                // and end it: without a DMA engine nothing else will.
+                this->cur_state = SeqState::XFER_END;
+                this->sequencer();
+            }
+        } else if (this->data_fifo_pos >= DATA_FIFO_MAX && !this->channel_obj) {
+            // The FIFO is full and no DMA engine is going to empty it; on
+            // these machines the sequencer sends it to the target instead.
             this->sequencer();
         }
     }
@@ -633,6 +642,11 @@ void Sc53C94::sequencer()
                 // is present but not yet programmed.
                 if (this->channel_obj && this->channel_obj->dma_is_ready())
                     this->channel_obj->xfer_retry();
+                else if (!this->channel_obj)
+                    // Nothing will come and fetch the data, so wait in the
+                    // state that hands each FIFO load to the target as the
+                    // processor pushes it through the handshake port.
+                    this->cur_state = SeqState::SEND_DATA;
             } else {
                 this->bus_obj->push_data(this->target_id, this->data_fifo, this->data_fifo_pos);
                 this->data_fifo_pos = 0;
@@ -678,6 +692,14 @@ void Sc53C94::sequencer()
         exec_next_command();
         break;
     case SeqState::SEND_DATA:
+        // Empty whatever the processor has pushed into the FIFO. The target
+        // accepts DATA_OUT in chunks, so a transfer longer than the FIFO
+        // simply arrives as several of them.
+        if (this->data_fifo_pos) {
+            this->bus_obj->push_data(this->target_id, this->data_fifo,
+                                     this->data_fifo_pos);
+            this->data_fifo_pos = 0;
+        }
         break;
     case SeqState::RCV_DATA:
         // check for unexpected bus phase changes
