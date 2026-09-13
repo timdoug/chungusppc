@@ -445,16 +445,43 @@ VIA2 IFR bit 1 is the only thing that has to arrive.
 
 ### What is still wrong
 
-* **Anything I/O bound is impractically slow.** MkLinux's SCSI driver spins:
-  around half a million CLEAR_FIFO commands a second, from `0x002C8128`, inside
-  a retry loop at `0x002C88DC`-`0x002C8984` that turns on a counter at
-  `+0x28` of its transfer descriptor. Booting a clean filesystem still takes two
-  minutes; a forced `fsck` does not finish in any reasonable time. This is the
-  `SCSI is working, but rather slow... partially a lack of pseudo-DMA code`
-  the README warns about, but half a million commands a second is worth a look
-  before accepting it.
-* **The ATAPI probe talks to the wrong addresses**, as below. It no longer
-  wedges the boot, but the IDE disk is not usable from MkLinux.
+* **SCSI is slow, and that part is faithful.** This machine manages around
+  150 KB/s where a 6100 over AMIC DMA manages 6.9 MB/s: MkLinux moves every
+  byte through the FIFO register, with roughly three chip commands each, having
+  no pseudo-DMA path at all. That is exactly the `SCSI is working, but rather
+  slow... partially a lack of pseudo-DMA code` its README warns about. A clean
+  boot takes about two minutes.
+
+  Making the chip fill its whole FIFO on a non-DMA `TRANSFER` command instead of
+  handing over one byte does triple the throughput - and breaks the 6100, whose
+  ROM then never gets through its own disk scan. Mac OS's SCSI Manager depends
+  on one byte per non-DMA transfer, so that is the real behaviour of the part
+  and the slowness belongs to the guest.
+
+* **MkLinux's ATAPI probe talks to addresses the F108 does not decode.** Its
+  ATAPI accessors choose four byte register spacing only for
+  `POWERMAC_CLASS_POWERBOOK`, so on a Performa they write Device/Head to
+  `0x50F1A060` and commands to `0x50F1A070`, sixteen bytes apart, while the
+  `wdc` driver beside them tests for PERFORMA too and gets it right:
+
+  ```
+  002D7568  lwz   r0,-0x30A8(r9)   ; powermac_info.class
+  002D756C  xori  r11,r0,4         ; zero iff POWERBOOK
+     ...                           ; r11 = 0 for POWERBOOK, -1 otherwise
+  002D7580  addi  r9,r31,0x60      ; sixteen byte spacing
+  002D7584  addi  r0,r31,0x18      ; four byte spacing
+  002D7588  and   r9,r9,r11
+  002D758C  andc  r0,r0,r11
+  002D7590  or    r11,r9,r0        ; pick one
+  ```
+
+  **Leave it alone.** Those writes go nowhere on a real 6200 either, the CD-ROM
+  on these machines is on the SCSI bus, and this is the kernel its author booted
+  on a 6214. It only looked fatal because two bugs of ours turned a probe of the
+  absent device 1 into a wedge: an absent device that read back as ready with
+  DRQ asserted (`35f26ca0`), and a channel that stayed pointed at it across the
+  software reset the driver used to recover (`6b9709dd`). With those fixed the
+  probe is just noise in a trace.
 
 Everything below is still a considered guess:
 
