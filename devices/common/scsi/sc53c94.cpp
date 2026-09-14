@@ -165,6 +165,14 @@ void Sc53C94::write(uint8_t reg_offset, uint8_t value)
     case Write::Reg53C94::Xfer_Cnt_MSB:
         this->set_xfer_count = (this->set_xfer_count & ~0xFF00U) | (value << 8);
         break;
+    case Write::Reg53C94::Xfer_Cnt_Hi:
+        // High byte of the 24-bit transfer count, valid in the Am53CF94's
+        // extended mode (CFG2_ENF). Without it a DMA transfer longer than
+        // 64 KB loses its top byte and stops short. read() already returns it.
+        if (this->config2 & CFG2_ENF)
+            this->set_xfer_count = (this->set_xfer_count & ~0xFF0000U) |
+                                   ((value & 0xFFU) << 16);
+        break;
     case Write::Reg53C94::Command:
         update_command_reg(value);
         break;
