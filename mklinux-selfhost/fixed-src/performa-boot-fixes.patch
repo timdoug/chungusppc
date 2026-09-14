@@ -20,24 +20,43 @@ index 33a5a34..34ea976 100644
  	*(v_u_long*)(capella_base_virt + CAPELLA_INT_REG_OFFSET) = 0x00;
  #endif
  
-diff --git a/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c b/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
-index 2600089..74e5dd2 100644
---- a/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
-+++ b/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
-@@ -832,7 +832,15 @@ asc_probe(
- 		break;
+diff --git a/src/mach_kernel/ppc/POWERMAC/powermac_performa.h b/src/mach_kernel/ppc/POWERMAC/powermac_performa.h
+index 908b7f2..7842a6f 100644
+--- a/src/mach_kernel/ppc/POWERMAC/powermac_performa.h
++++ b/src/mach_kernel/ppc/POWERMAC/powermac_performa.h
+@@ -91,7 +91,11 @@
  
- 	case	0:
--		pmac_register_int(PMAC_DEV_SCSI1, SPLBIO, asc_intr);
-+		/* The 5200/6200 have a single Curio whose interrupt is wired to
-+		 * the VIA2 SCSI IRQ (PMAC_DEV_SCSI0, the only SCSI entry in the
-+		 * Performa interrupt tables). Only the two-bus machines have a
-+		 * real second controller on PMAC_DEV_SCSI1, so registering SCSI1
-+		 * here panics performa_register_int on a Performa. */
-+		if (powermac_info.class == POWERMAC_CLASS_PERFORMA)
-+			pmac_register_int(PMAC_DEV_SCSI0, SPLBIO, asc_intr);
-+		else
-+			pmac_register_int(PMAC_DEV_SCSI1, SPLBIO, asc_intr);
- 		break;
- 	}
+ /* Fish 'n' Chips */
  
+-#define PERFORMA_CUDA_BASE_PHYS	(0x50f16000)
++/* Cuda is reached through VIA1 (its register offsets - shift at +0x1400,
++   IFR at +0x1a00 - are VIA registers), so its base is the VIA1/PMU base at
++   PERFORMA_IO_BASE_ADDR. The old 0x50f16000 pointed into the SWIM floppy
++   register block, so cudaprobe() hung waiting for a TREQ that never came. */
++#define PERFORMA_CUDA_BASE_PHYS	(PERFORMA_IO_BASE_ADDR)
+ #define PERFORMA_CAPELLA_BASE_PHYS (0x53000000)
+ #define PERFORMA_CAPELLA_SIZE (0x01000000)
+ #define CAPELLA_INT_REG_OFFSET (0x18)
+diff --git a/src/mach_kernel/ppc/POWERMAC/serial_io.c b/src/mach_kernel/ppc/POWERMAC/serial_io.c
+index 4c586e4..9be84ef 100644
+--- a/src/mach_kernel/ppc/POWERMAC/serial_io.c
++++ b/src/mach_kernel/ppc/POWERMAC/serial_io.c
+@@ -411,8 +411,16 @@ scc_probe(caddr_t  xxx, void *param)
+ 				(scc_regmap_t)scc_std[0];
+ 		    scc->schan[SCC_CHANNEL_B].data =
+ 				(scc_regmap_t)scc_std[0] + 4;
+-		    pmac_register_int(PMAC_DEV_SCC, SPLTTY,
+-				      (void (*)(int, void *))scc_intr);
++		    /* The 5200/6200 SCC interrupt is not wired into any of the
++		       active Performa VIA/F108 interrupt tables (it lived only
++		       in the disabled ICR table in interrupt_performa.c), so
++		       registering PMAC_DEV_SCC panics performa_register_int.
++		       The console is the Valkyrie framebuffer; run the serial
++		       ports polled (output works) rather than register an
++		       unsupported interrupt. */
++		    if (powermac_info.class != POWERMAC_CLASS_PERFORMA)
++			pmac_register_int(PMAC_DEV_SCC, SPLTTY,
++					  (void (*)(int, void *))scc_intr);
+ 		    break;
+ 
+ 		case	POWERMAC_CLASS_PCI:
