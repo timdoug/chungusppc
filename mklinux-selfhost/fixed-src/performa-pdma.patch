@@ -11,7 +11,7 @@ index d3d2ffa..ebdef48 100644
  ppc/POWERMAC/mesh.c		optional mesh device-driver
  
 diff --git a/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c b/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
-index 04e3632..050c0c1 100644
+index 04e3632..dc7bf6d 100644
 --- a/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
 +++ b/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
 @@ -610,7 +610,7 @@ struct	bus_driver asc_driver =
@@ -43,7 +43,19 @@ index 04e3632..050c0c1 100644
  		asc->regs = (asc_curio_regmap_t *)PERFORMA_ASC_BASE_PHYS;
  		break;
  
-@@ -2669,11 +2680,19 @@ done:
+@@ -757,6 +768,11 @@ asc_probe(
+ 
+ 	asc->max_scsi_offset = ASC_MAX_OFFSET;
+ 
++	/* The Performa Curio is a standard NCR 53C96 clocked at 18.75 MHz (see
++	   the 5200/6200 developer note), not a Fast part: no Fast SCSI, a 16-bit
++	   transfer count and no FEATURES/24-bit count. That is exactly the unit-1
++	   profile below (53C94, ASC_TC_MAX, and 20 MHz - the same CCF band as
++	   18.75 MHz), so the Performa needs no special case here. */
+ 	switch (unit) {
+ 	case	1:
+ 		asc->min_period = ASC_MIN_PERIOD_20;
+@@ -2669,11 +2685,19 @@ done:
  		/* Check to make sure the address and count
  		 * can be used to do a DMA transfer.
  		 */
