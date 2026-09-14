@@ -9,8 +9,16 @@ which roads are already known to be dead ends.
 `pm5200` and `pm6200` boot the ROM to the Mac OS "insert disk" screen with a
 working mouse, boot Mac OS from an IDE image, hand over through the MkLinux
 booter, and reach a **MkLinux DR3 login prompt in about two minutes**, in
-colour, with the keyboard working. Nothing is known to be broken; what is left
-is speed.
+colour, with the keyboard working. A SCSI CD-ROM can be attached without
+upsetting any of it. Nothing is known to be broken; what is left is speed, and
+an install.
+
+Note what that does *not* include. The `mklinux.img` this boots was installed on
+a `pm7200` in an earlier session and simply carried across - MkLinux above Mach
+is portable enough that it came up. **Nothing has ever been installed on this
+machine**, and the login prompt has never been got past, because the root
+password on that image is not written down anywhere. See
+[Installing on a 6200CD](#installing-on-a-6200cd).
 
 **Run the Performa kernel.** Everything above depends on it - see
 [Which kernel](#which-kernel).
@@ -34,6 +42,9 @@ Three things that are not optional:
   first in `--scsi_hdd_img`, even though the machine boots Mac OS from IDE.
 * **`--hdd_img` is the IDE disk.** `ScsiBus` no longer takes it, so SCSI disks
   go in `--scsi_hdd_img` and a second IDE disk in `--hdd2_img`.
+
+Add `--cdr_img "MkLinux R2 RC5.toast"` for a CD; it attaches at the first free
+ID from 3 upwards and says so in the log.
 
 ## Which kernel
 
@@ -94,11 +105,68 @@ Machine-specific, all of it needed before the drive interrupt reached MkLinux:
 | `987c2f38` | VIA2 IFR writes clear a flag without needing bit 7; the slot cascade is not gated on a per-slot enable nothing writes; Valkyrie's vertical blank is on the slot register's video line, not the F108's. |
 | `155f6988` | Writing a bit to `0x50F1A100` dismisses that F108 flag, which is how MkLinux's handler does it. |
 | `ce469db0` | The Valkyrie palette answers at `+8` as well as `+4`, which is where MkLinux writes it. |
+| `5434df42` | CD-ROMs say which SCSI ID they landed at, the way hard disks already did. |
 
-## Where it stands
+## Installing on a 6200CD
 
-Nothing is known to be broken. What is left is speed: this machine manages
-about **150 KB/s** over SCSI where a 6100 over AMIC DMA manages **6.9 MB/s**.
+Nothing here has been tried. It is the obvious next milestone and these are the
+things worth knowing before spending hours on it.
+
+**Install R2, not DR3.** The only Mach kernel that runs on this family is the
+one dated 5 August 2000, and the R2 disc is what ships it. DR3's installer would
+lay down a DR3 kernel with no Performa support at all, leaving you to swap it
+afterwards - and that swap is the awkward one, because the Performa kernel is
+larger than what it replaces and will not fit the fork in place.
+
+**The installer runs under the kernel you already have.** This is the part that
+makes the whole thing tractable: the booter loads `Mach Kernel` from the Mac OS
+System Folder's Extensions, *not* from the CD. Leave the Performa kernel there,
+point `lilo.conf` at the CD, and the installer runs on a kernel that supports
+this hardware even though the disc's own kernel does not.
+
+A sketch of the path, with the parts that are already established:
+
+1. **Attach the disc.** `--cdr_img "MkLinux R2 RC5.toast"` lands it at SCSI ID 3
+   - which is where DR3's stock `rootdev=/dev/scd0` expects a CD - and the
+   machine still boots to a login prompt with one present. Verified.
+2. **Give the target disk an Apple partition map.** The installer only runs
+   `pdisk` if block 0 already holds the `ER` Driver Descriptor Record; without
+   it, it silently runs `fdisk`, which MkLinux cannot use. Bootstrap the map
+   once with the Mac OS `pdisk` in the disc's `MacOS Utilities`.
+3. **Point the booter at the CD.** `rootdev=/dev/scd0` in `lilo.conf`, which the
+   MkLinux control panel edits under **Custom...**. You can also write it from
+   the host: it is a plain text file in the System Folder's Preferences, and
+   `mklinux-selfhost/debug/hfs-list.py` will show you the current contents.
+4. **Run the installer.** R2's is Red Hat's `newt` one and has its own quirks -
+   choose fdisk rather than Disk Druid, set the root mount point with **F3** -
+   all of which are written up under "MkLinux R2" in
+   [the user guide](../users/mklinux.md).
+5. **Afterwards**, set `rootdev` to the installed partition and check that the
+   Performa kernel is still the one in Extensions.
+
+Two things to expect:
+
+* **It will take hours.** At ~150 KB/s an R2 install moves several hundred
+  megabytes. Do not kill the emulator partway: a dirty root filesystem costs a
+  full `fsck` on the next boot, which is slower still. Repair it from the host
+  instead (below).
+* **Writes are the least-tested path in the emulator.** Everything verified so
+  far is read-dominated. DATA_OUT through the SCSI handshake port (`c3528e54`)
+  is new, and the heaviest use it has had is `fsck` repairing a few inodes. An
+  install is the first real write test, so that is the first place to look if it
+  goes wrong.
+
+Unknowns worth settling cheaply before committing to a long run:
+
+* Whether MkLinux mounts the CD at all - needs a shell, so it needs the root
+  password on the existing image, or an install.
+* Whether the installer's own disk scan copes with this machine's SCSI. The
+  driver's probe of the absent IDE device 1 used to wedge it; that is fixed, but
+  the CD is a third target on a bus that has only ever carried two.
+
+## What is left: speed
+
+This machine manages about **150 KB/s** over SCSI where a 6100 over AMIC DMA manages **6.9 MB/s**.
 MkLinux moves every byte through the FIFO register with roughly three chip
 commands each, having no pseudo-DMA path, which is what its own README means by
 `SCSI is working, but rather slow... partially a lack of pseudo-DMA code`. A
