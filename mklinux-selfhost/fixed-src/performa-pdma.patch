@@ -1,0 +1,197 @@
+diff --git a/src/mach_kernel/conf/POWERMAC/files b/src/mach_kernel/conf/POWERMAC/files
+index d3d2ffa..ebdef48 100644
+--- a/src/mach_kernel/conf/POWERMAC/files
++++ b/src/mach_kernel/conf/POWERMAC/files
+@@ -134,6 +134,7 @@ ppc/POWERMAC/scsi_5380_hdw.c	optional psc device-driver
+ ppc/POWERMAC/ncr5380sbc.c	optional psc device-driver
+ ppc/POWERMAC/scsi_amic.c	optional asc device-driver
+ ppc/POWERMAC/scsi_curio_dbdma.c optional asc device-driver
++ppc/POWERMAC/scsi_curio_pdma.c	optional asc device-driver
+ ppc/POWERMAC/dbdma.c		standard
+ ppc/POWERMAC/mesh.c		optional mesh device-driver
+ 
+diff --git a/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c b/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
+index 04e3632..2600089 100644
+--- a/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
++++ b/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
+@@ -610,7 +610,7 @@ struct	bus_driver asc_driver =
+         { asc_probe, scsi_slave, scsi_attach, (int(*)(void))asc_go,
+ 	  asc_std, "rz", asc_dinfo, "asc", asc_minfo, BUS_INTR_B4_PROBE};
+ 
+-extern scsi_curio_dma_ops_t scsi_amic_ops, scsi_curio_dbdma_ops;
++extern scsi_curio_dma_ops_t scsi_amic_ops, scsi_curio_dbdma_ops, scsi_curio_pdma_ops;
+ 
+ int	asc_clock_speed_in_mhz[NASC] = {
+ 40
+@@ -685,7 +685,11 @@ asc_probe(
+ 		break;
+ 
+ 	case	POWERMAC_CLASS_PERFORMA:
+-		asc->dma_ops = NULL;
++		/*
++		 * No SCSI DMA engine here; move data through the pseudo-DMA
++		 * handshake port instead of one byte at a time via the FIFO.
++		 */
++		asc->dma_ops = &scsi_curio_pdma_ops;
+ 		asc->regs = (asc_curio_regmap_t *)PERFORMA_ASC_BASE_PHYS;
+ 		break;
+ 
+@@ -2669,11 +2673,19 @@ done:
+ 		/* Check to make sure the address and count
+ 		 * can be used to do a DMA transfer.
+ 		 */
+-		
++
+ 		if ((unsigned long) *address & 0x7 || *count & 0x7) {
+ 			*address = sgp->sg_vmaddr + offset;
+ 			can_dma_transfer = FALSE;
+ 
++		} else if (asc->dma_ops == &scsi_curio_pdma_ops) {
++			/* Pseudo-DMA is driven by the processor, so it needs a
++			 * virtual address it can dereference rather than the
++			 * physical one a real DMA engine is given. The alignment
++			 * checked just above holds for the virtual address too
++			 * (same page offset), so the word copy stays aligned.
++			 */
++			*address = sgp->sg_vmaddr + offset;
+ 		}
+ 	}
+ 
+diff --git a/src/mach_kernel/ppc/POWERMAC/scsi_curio_pdma.c b/src/mach_kernel/ppc/POWERMAC/scsi_curio_pdma.c
+new file mode 100644
+index 0000000..157e5b5
+--- /dev/null
++++ b/src/mach_kernel/ppc/POWERMAC/scsi_curio_pdma.c
+@@ -0,0 +1,132 @@
++/*
++ * Copyright 1991-1998 by Open Software Foundation, Inc.
++ *              All Rights Reserved
++ *
++ * Permission to use, copy, modify, and distribute this software and
++ * its documentation for any purpose and without fee is hereby granted,
++ * provided that the above copyright notice appears in all copies and
++ * that both the copyright notice and this permission notice appear in
++ * supporting documentation.
++ *
++ * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE
++ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
++ * FOR A PARTICULAR PURPOSE.
++ *
++ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR
++ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
++ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT,
++ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION
++ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ *
++ */
++/*
++ * MkLinux
++ */
++
++/*
++ * Pseudo-DMA backend for the Power Macintosh 5200/6200 (Performa) Curio SCSI.
++ *
++ * These machines have no SCSI DMA engine. The F108/PrimeTime glue instead
++ * provides a pseudo-DMA "handshake" port: the processor reads or writes that
++ * single address in a tight loop and the hardware paces each access against
++ * the 53CF94's DREQ/DACK. So unlike the AMIC and DBDMA backends, which program
++ * an engine and return, dma_start_transfer here does the copy itself. When it
++ * returns the chip's transfer counter has reached zero, and the normal
++ * terminal-count interrupt drives the rest of the state machine.
++ *
++ * asc_get_io() hands this backend a kernel virtual address (not the physical
++ * one a real DMA engine wants) with an eight-byte aligned count, so the copy
++ * moves whole 32-bit words with no misaligned tail.
++ */
++
++#include <asc.h>
++
++#if     NASC > 0
++#include <platforms.h>
++#include <ppc/proc_reg.h> /* For eieio */
++#include <mach_debug.h>
++#include <kern/spl.h>
++#include <mach/std_types.h>
++#include <types.h>
++#include <chips/busses.h>
++#include <ppc/POWERMAC/powermac.h>
++#include <ppc/POWERMAC/powermac_performa.h>
++#include <ppc/POWERMAC/scsi_53C94.h>
++
++/* The handshake port sits one 256-byte window past the register block. */
++#define	PERFORMA_ASC_PDMA_PHYS	(PERFORMA_ASC_BASE_PHYS + 0x100)
++
++void	scsi_curio_pdma_init(int unit);
++void	scsi_curio_pdma_setup(int unit, vm_offset_t address,
++				vm_size_t len, boolean_t isread);
++void	scsi_curio_pdma_start(int unit, boolean_t isread);
++void	scsi_curio_pdma_end(int unit, boolean_t isread);
++
++scsi_curio_dma_ops_t	scsi_curio_pdma_ops = {
++	scsi_curio_pdma_init,
++	scsi_curio_pdma_setup,
++	scsi_curio_pdma_start,
++	scsi_curio_pdma_end
++};
++
++struct pdma_softc {
++	volatile unsigned long	*port;	/* the handshake port */
++	unsigned long		*addr;	/* current buffer (kernel virtual) */
++	vm_size_t		len;	/* byte count for this chunk */
++} scsi_curio_pdma_softc[NASC];
++
++
++void
++scsi_curio_pdma_init(int unit)
++{
++	scsi_curio_pdma_softc[unit].port =
++		(volatile unsigned long *) POWERMAC_IO(PERFORMA_ASC_PDMA_PHYS);
++}
++
++void
++scsi_curio_pdma_setup(int unit, vm_offset_t address, vm_size_t len,
++			boolean_t isread)
++{
++	struct pdma_softc	*p = &scsi_curio_pdma_softc[unit];
++
++	p->addr = (unsigned long *) address;
++	p->len  = len;
++}
++
++void
++scsi_curio_pdma_start(int unit, boolean_t isread)
++{
++	struct pdma_softc	*p = &scsi_curio_pdma_softc[unit];
++	volatile unsigned long	*port = p->port;
++	unsigned long		*data = p->addr;
++	vm_size_t		words = p->len >> 2;
++
++	/*
++	 * The count is eight-byte aligned, so it divides evenly into words.
++	 * Each access to the fixed port moves the next word to or from the
++	 * chip's FIFO; the hardware handshake supplies the pacing.
++	 */
++	if (isread) {
++		while (words-- > 0) {
++			*data++ = *port;
++			eieio();
++		}
++	} else {
++		while (words-- > 0) {
++			*port = *data++;
++			eieio();
++		}
++	}
++}
++
++void
++scsi_curio_pdma_end(int unit, boolean_t isread)
++{
++	/*
++	 * The transfer finished synchronously in start(); the chip raised its
++	 * terminal-count interrupt on its own. Nothing to flush: the processor
++	 * did the copy, so the data is already coherent with its own accesses.
++	 */
++}
++
++#endif 	/* NASC > 0 */
