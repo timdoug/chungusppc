@@ -1,3 +1,44 @@
+diff --git a/src/mach_kernel/ppc/POWERMAC/adb.c b/src/mach_kernel/ppc/POWERMAC/adb.c
+index 2a69d2a..ce817e8 100644
+--- a/src/mach_kernel/ppc/POWERMAC/adb.c
++++ b/src/mach_kernel/ppc/POWERMAC/adb.c
+@@ -754,7 +754,16 @@ adb_send(adb_request_t *adb, boolean_t wait)
+ {
+ 	spl_t	s;
+ 
+-	if (!adb_polling) 
++	/* On machines whose ADB completion interrupt is not delivered (the
++	   Performa), adb_always_poll is set so every request is polled to
++	   completion. Various drivers toggle adb_polling off after their own
++	   critical sections without honoring adb_always_poll, so re-assert it
++	   here - otherwise a synchronous request would sleep forever waiting
++	   for an interrupt that never arrives. */
++	if (adb_always_poll)
++		adb_polling = TRUE;
++
++	if (!adb_polling)
+ 		s  = spltty();
+ 
+ 	simple_lock(&adb_lock);
+diff --git a/src/mach_kernel/ppc/POWERMAC/cuda.c b/src/mach_kernel/ppc/POWERMAC/cuda.c
+index 8ecbeb7..79ed799 100644
+--- a/src/mach_kernel/ppc/POWERMAC/cuda.c
++++ b/src/mach_kernel/ppc/POWERMAC/cuda.c
+@@ -185,8 +185,12 @@ cudaprobe(caddr_t addr, void *ui)
+ 
+ 	case POWERMAC_CLASS_PERFORMA:
+ 		cuda_base = (unsigned char*)POWERMAC_IO(PERFORMA_CUDA_BASE_PHYS);
+-		// adb_always_poll = TRUE;
+-		// adb_polling = TRUE;
++		/* The Cuda interrupt is not delivered on the Performa, so a
++		   synchronous ADB request (e.g. keyboard_get_led_state() during
++		   console open) would sleep forever waiting for a completion
++		   interrupt. Poll ADB instead. */
++		adb_always_poll = TRUE;
++		adb_polling = TRUE;
+ 		break;
+ 	default:
+ 	case POWERMAC_CLASS_PCI:
 diff --git a/src/mach_kernel/ppc/POWERMAC/interrupt_performa.c b/src/mach_kernel/ppc/POWERMAC/interrupt_performa.c
 index 33a5a34..34ea976 100644
 --- a/src/mach_kernel/ppc/POWERMAC/interrupt_performa.c
