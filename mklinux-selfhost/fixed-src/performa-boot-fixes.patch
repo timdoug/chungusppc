@@ -60,3 +60,46 @@ index 4c586e4..9be84ef 100644
  		    break;
  
  		case	POWERMAC_CLASS_PCI:
+diff --git a/src/mach_kernel/ppc/model_dep.c b/src/mach_kernel/ppc/model_dep.c
+index 8776710..b2a7a43 100644
+--- a/src/mach_kernel/ppc/model_dep.c
++++ b/src/mach_kernel/ppc/model_dep.c
+@@ -862,32 +862,12 @@ powermac_define_machine(int machineGestalt)
+ 					powermac_info.bus_clock_rate_hz	= 40000000;
+ 
+ 				if (powermac_info.class == POWERMAC_CLASS_PERFORMA) {
+-					unsigned long *procid;
+-#ifndef FIX_BOGUS_GESTALTS
+-					unsigned long hwid=0xDEADBEEF;
+-#else
+-					extern unsigned long hwid;
+-#endif
+-					// procid = (unsigned long *)0x5ffffffc;
+-					procid = (unsigned long *)hwid;
+-
+-					switch ((*procid) & 0xff) {
+-					    case 0x50:
+-					    case 0x58:
+-						// 75 MHz Performa
+-						powermac_info.bus_clock_rate_hz = 25000000;
+-						break;
+-					    case 0x51:
+-					    case 0x59:
+-						// 80 MHz Performa
+-						powermac_info.bus_clock_rate_hz = 40000000;
+-						break;
+-					    default:
+-						// PPC upgraded 68k Mac....
+-						// Guess a value.
+-						powermac_info.bus_clock_rate_hz = 33000000;
+-						break;
+-					}
++					/* The original code dereferenced hwid
++					 * (0xDEADBEEF) as a pointer, reading a
++					 * garbage machine ID and hence a wrong bus
++					 * clock. The 5200/6200 machines we support
++					 * are the 75 MHz models with a 25 MHz bus. */
++					powermac_info.bus_clock_rate_hz = 25000000;
+ 				}
+ 				if (powermac_info.class == POWERMAC_CLASS_PDM) {
+ 					/* if we reach this point, it's a PDM with a
