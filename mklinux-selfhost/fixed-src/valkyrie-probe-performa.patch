@@ -6,7 +6,7 @@ zdocs/developers/cordyceps.md.
 
 --- a/src/mach_kernel/ppc/POWERMAC/video_valkyrie.c
 +++ b/src/mach_kernel/ppc/POWERMAC/video_valkyrie.c
-@@ -88,19 +88,20 @@
+@@ -88,20 +88,22 @@
  valkyrie_probe(caddr_t port)
  {
     switch(powermac_info.class) {
