@@ -19,7 +19,9 @@
       "src/mach_kernel/ppc/POWERMAC/interrupt_performa.c": "4b6c9efb427ad91e4a10bc69a261de70edcaff23b67842a0b22ddfa0beeea832",
       "src/mach_kernel/ppc/POWERMAC/serial_io.c": "0b91bdcaffbf6f1fdf574e79aef67be7e861e5418a062f91654c0ffbd489b508",
       "src/mach_kernel/ppc/POWERMAC/powermac_performa.h": "d8a36647d1e6cc74e0a458c3e19704f4069d1a74042894bd0427bf7cc6a90526",
-      "src/mach_kernel/ppc/model_dep.c": "fd4738a86d960218cdb922fb53a31042f6129d171d5530951047e0dcd4623cfe"
+      "src/mach_kernel/ppc/model_dep.c": "fd4738a86d960218cdb922fb53a31042f6129d171d5530951047e0dcd4623cfe",
+      "src/mach_kernel/ppc/POWERMAC/cuda.c": "c37953ae00d866eefb7f256f6e9170022d7ab367b87c8a36e32ddcb98a60939f",
+      "src/mach_kernel/ppc/POWERMAC/adb.c": "dad6e3d957f934d8ecc04043fa25dfb99b0789f42cb1e88fedd6c1ab84b7e944"
     }
   },
   "linux-2.0.40.tar.xz": {
