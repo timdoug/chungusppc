@@ -847,17 +847,17 @@ bool Sc53C94::rcv_data()
         return false;
     }
 
-    if (this->cur_bus_phase == ScsiPhase::DATA_IN) {
-        int fifo_free = DATA_FIFO_MAX - this->data_fifo_pos;
-        // A non-DMA Transfer Information moves data through the FIFO, and the
-        // real chip keeps handshaking bytes off the bus until the FIFO is full
-        // or the target ends the phase. Delivering a single byte per transfer
-        // (as we used to) forced the driver's poll loop to run once per byte;
-        // filling the FIFO lets it drain up to a FIFO's worth per iteration,
-        // which is both faster and what the hardware does.
-        req_count = this->is_dma_cmd
-            ? std::min((int)this->xfer_count, fifo_free)
-            : fifo_free;
+    if (this->is_dma_cmd && this->cur_bus_phase == ScsiPhase::DATA_IN) {
+        req_count = std::min((int)this->xfer_count, DATA_FIFO_MAX - this->data_fifo_pos);
+    } else if (!this->channel_obj && this->cur_bus_phase == ScsiPhase::DATA_IN) {
+        // Only on machines with no DMA engine at all (5200/6200): a non-DMA
+        // Transfer Information moves data through the FIFO, and the real chip
+        // keeps handshaking bytes off the bus until the FIFO fills. Delivering
+        // one byte per transfer (as we used to) forced the driver's poll loop
+        // to run once per byte; filling the FIFO lets it drain a FIFO's worth
+        // per iteration, which is both faster and what the hardware does. On
+        // machines with a DMA channel this path stays one byte, unchanged.
+        req_count = DATA_FIFO_MAX - this->data_fifo_pos;
     } else {
         req_count = 1;
     }
