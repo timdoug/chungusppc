@@ -419,7 +419,7 @@ public:
     void confirm_selection(int target_id);
     bool end_selection(int initiator_id, int target_id);
     void disconnect(int dev_id);
-    bool pull_data(const int id, uint8_t* dst_ptr, const int size);
+    int  pull_data(const int id, uint8_t* dst_ptr, const int size);
     bool push_data(const int id, const uint8_t* src_ptr, const int size);
     int  target_xfer_data();
     void target_next_step();
