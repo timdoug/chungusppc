@@ -839,14 +839,26 @@ bool Sc53C94::rcv_data()
         return false;
     }
 
-    if (this->is_dma_cmd && this->cur_bus_phase == ScsiPhase::DATA_IN) {
-        req_count = std::min((int)this->xfer_count, DATA_FIFO_MAX - this->data_fifo_pos);
+    if (this->cur_bus_phase == ScsiPhase::DATA_IN) {
+        int fifo_free = DATA_FIFO_MAX - this->data_fifo_pos;
+        // A non-DMA Transfer Information moves data through the FIFO, and the
+        // real chip keeps handshaking bytes off the bus until the FIFO is full
+        // or the target ends the phase. Delivering a single byte per transfer
+        // (as we used to) forced the driver's poll loop to run once per byte;
+        // filling the FIFO lets it drain up to a FIFO's worth per iteration,
+        // which is both faster and what the hardware does.
+        req_count = this->is_dma_cmd
+            ? std::min((int)this->xfer_count, fifo_free)
+            : fifo_free;
     } else {
         req_count = 1;
     }
 
-    this->bus_obj->pull_data(this->target_id, &this->data_fifo[this->data_fifo_pos], req_count);
-    this->data_fifo_pos += req_count;
+    // Advance by the count the target actually supplied: it can be short at the
+    // end of its data, and over-counting would leave stale FIFO bytes.
+    int got = this->bus_obj->pull_data(this->target_id,
+                                       &this->data_fifo[this->data_fifo_pos], req_count);
+    this->data_fifo_pos += got;
 
     // The transfer counter follows the SCSI bus, not the port the processor
     // collects the data from, so it reaches zero once the bus side is done.

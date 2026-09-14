@@ -252,18 +252,22 @@ bool ScsiBus::end_selection(int initiator_id, int target_id)
     return this->target_id == target_id;
 }
 
-bool ScsiBus::pull_data(const int id, uint8_t* dst_ptr, const int size)
+// Returns the number of bytes the target actually supplied, which can be less
+// than requested at the end of its data. Callers that treated the old bool
+// return as success/failure still work: zero bytes reads as false.
+int ScsiBus::pull_data(const int id, uint8_t* dst_ptr, const int size)
 {
     if (dst_ptr == nullptr || !size) {
-        return false;
+        return 0;
     }
 
-    if (!this->devices[id]->send_data(dst_ptr, size)) {
+    int got = this->devices[id]->send_data(dst_ptr, size);
+    if (!got) {
         LOG_F(ERROR, "%s: error while transferring T->I data!", this->get_name().c_str());
-        return false;
+        return 0;
     }
 
-    return true;
+    return got;
 }
 
 bool ScsiBus::push_data(const int id, const uint8_t* src_ptr, const int size)
