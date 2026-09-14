@@ -18,7 +18,8 @@
       "src/mach_kernel/ppc/POWERMAC/video_valkyrie.c": "d15e3ca72a3bd6678b549c226f35619de1e4dd4891d55e9b97fedffe524e0dd8",
       "src/mach_kernel/ppc/POWERMAC/interrupt_performa.c": "4b6c9efb427ad91e4a10bc69a261de70edcaff23b67842a0b22ddfa0beeea832",
       "src/mach_kernel/ppc/POWERMAC/serial_io.c": "0b91bdcaffbf6f1fdf574e79aef67be7e861e5418a062f91654c0ffbd489b508",
-      "src/mach_kernel/ppc/POWERMAC/powermac_performa.h": "d8a36647d1e6cc74e0a458c3e19704f4069d1a74042894bd0427bf7cc6a90526"
+      "src/mach_kernel/ppc/POWERMAC/powermac_performa.h": "d8a36647d1e6cc74e0a458c3e19704f4069d1a74042894bd0427bf7cc6a90526",
+      "src/mach_kernel/ppc/model_dep.c": "fd4738a86d960218cdb922fb53a31042f6129d171d5530951047e0dcd4623cfe"
     }
   },
   "linux-2.0.40.tar.xz": {
