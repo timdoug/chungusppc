@@ -9,15 +9,22 @@ which roads are already known to be dead ends.
 `pm5200` and `pm6200` boot the ROM to the Mac OS "insert disk" screen with a
 working mouse, boot Mac OS from an IDE image, hand over through the MkLinux
 booter, and reach a **MkLinux DR3 login prompt in about two minutes**, in
-colour, with the keyboard working. You can now **log in** (root / dingusppc) and
-get a shell. A SCSI CD-ROM can be attached without upsetting any of it, and from
-the shell **it mounts** - `/dev/scd0` as iso9660, contents readable. Nothing is
-known to be broken; what is left is speed, and an install.
+colour, with the keyboard working. You can **log in** (root / dingusppc) and get
+a shell. A SCSI CD-ROM can be attached without upsetting any of it, and from the
+shell **it mounts** - `/dev/scd0` as iso9660, contents readable.
 
-Note what that does *not* include. The `mklinux.img` this boots was installed on
-a `pm7200` in an earlier session and simply carried across - MkLinux above Mach
-is portable enough that it came up. **Nothing has ever been installed on this
-machine**. See [Installing on a 6200CD](#installing-on-a-6200cd).
+**A full MkLinux R2 install has now been done on this machine and boots.** From
+the R2 RC5 disc, onto a fresh `mklinux-r2.img`, the Red Hat `newt` installer ran
+to completion (247 packages, ~309 MB, roughly an hour at this machine's SCSI
+speed) and the installed system comes up to a login in about two minutes:
+**MkLinux Release 2.0, Linux 2.0.38-osfmach3, Red Hat 6.2 (Zoot)** - newer than
+the DR3 (`2.0.33`, Red Hat 5.0) that `mklinux.img` carries. Root there is also
+`root` / `dingusppc`. See [Installing on a 6200CD](#installing-on-a-6200cd) for
+exactly what was done. Nothing is known to be broken; what is left is speed.
+
+The older path still works too. The `mklinux.img` (DR3) was installed on a
+`pm7200` in an earlier session and carried across; MkLinux above Mach is portable
+enough that it came up.
 
 The root login on `mklinux.img` is **`root` / `dingusppc`** (DES `crypt`, so only
 the first eight characters `dinguspp` are actually checked; the hash in
@@ -113,68 +120,79 @@ Machine-specific, all of it needed before the drive interrupt reached MkLinux:
 
 ## Installing on a 6200CD
 
-Nothing here has been tried. It is the obvious next milestone and these are the
-things worth knowing before spending hours on it.
+**This has been done.** A full MkLinux R2 install onto a fresh disk, booted and
+verified. What follows is the recipe that worked, not a sketch.
 
-**Install R2, not DR3.** The only Mach kernel that runs on this family is the
-one dated 5 August 2000, and the R2 disc is what ships it. DR3's installer would
-lay down a DR3 kernel with no Performa support at all, leaving you to swap it
-afterwards - and that swap is the awkward one, because the Performa kernel is
-larger than what it replaces and will not fit the fork in place.
+**Install R2, not DR3.** The only Mach kernel that runs on this family is the one
+dated 5 August 2000, and the R2 disc is what ships it. DR3's installer would lay
+down a DR3 kernel with no Performa support at all. Use `MkLinux R2 RC5.toast`,
+never `MkLinux-DR3.iso`.
 
-**The installer runs under the kernel you already have.** This is the part that
-makes the whole thing tractable: the booter loads `Mach Kernel` from the Mac OS
-System Folder's Extensions, *not* from the CD. Leave the Performa kernel there,
-point `lilo.conf` at the CD, and the installer runs on a kernel that supports
-this hardware even though the disc's own kernel does not.
+**The installer runs under the kernel you already have.** This is what makes it
+tractable: the booter loads `Mach Kernel` from the Mac OS System Folder's
+Extensions (the Performa kernel), *not* from the CD. Point `lilo.conf` at the CD
+and the installer runs on a kernel that supports this hardware even though the
+disc's own kernel does not.
 
-A sketch of the path, with the parts that are already established:
+### The recipe
 
-1. **Attach the disc.** `--cdr_img "MkLinux R2 RC5.toast"` lands it at SCSI ID 3
-   - which is where DR3's stock `rootdev=/dev/scd0` expects a CD - and the
-   machine still boots to a login prompt with one present. Verified.
-2. **Give the target disk an Apple partition map.** The installer only runs
-   `pdisk` if block 0 already holds the `ER` Driver Descriptor Record; without
-   it, it silently runs `fdisk`, which MkLinux cannot use. Bootstrap the map
-   once with the Mac OS `pdisk` in the disc's `MacOS Utilities`.
-3. **Point the booter at the CD.** `rootdev=/dev/scd0` in `lilo.conf`, which the
-   MkLinux control panel edits under **Custom...**. You can also write it from
-   the host: it is a plain text file in the System Folder's Preferences, and
-   `mklinux-selfhost/debug/hfs-list.py` will show you the current contents.
-4. **Run the installer.** R2's is Red Hat's `newt` one and has its own quirks -
-   choose fdisk rather than Disk Druid, set the root mount point with **F3** -
-   all of which are written up under "MkLinux R2" in
-   [the user guide](../users/mklinux.md).
-5. **Afterwards**, set `rootdev` to the installed partition and check that the
-   Performa kernel is still the one in Extensions.
+1. **Make a blank target disk with an Apple partition map, from the host.** The
+   installer's "fdisk" button runs `pdisk` (which MkLinux needs) *only* if block
+   0 already holds the `ER` Driver Descriptor Record; without it, it silently
+   falls back to Linux `fdisk`, which cannot write an Apple map. You do not need
+   the guest's `pdisk` to bootstrap this - copy the DDR and the three partition
+   map blocks out of an existing image (`mklinux.img`), patch the block counts
+   and partition sizes for the new disk, and sparse-extend to full size. A root
+   `Apple_UNIX_SVR2` named `root` and a second named `swap` is all it takes; the
+   installer reads them back as `Linux native` and `Linux swap`. `mklinux-r2.img`
+   was built this way, 1.5 GB (1.4 G root + 128 M swap).
+2. **Point the booter at the CD.** Set the active `rootdev` in the Mac OS
+   `lilo.conf` to `/dev/scd0`. From the host this is a length-preserving byte
+   edit of `macos-performa.img`: move the `# ` so `rootdev=/dev/scd0` is the live
+   line. `mklinux-selfhost/debug/hfs-list.py` prints the file's current contents
+   (via the HFS catalog - trust that, not a raw `grep`, since deleted copies of
+   the text litter free space).
+3. **Boot with the target as the only SCSI disk and the CD attached.**
+   `--hdd_img macos-performa.img --scsi_hdd_img mklinux-r2.img --cdr_img
+   "MkLinux R2 RC5.toast"`. Target lands at `sda`, CD at `scd0`. The installer
+   comes up in about two minutes.
+4. **Drive the `newt` installer.** Tab/Alt-Tab move, Space toggles, **F12** is
+   the default/next button (but F12 fires whatever button has focus, so Tab to
+   `Done`/`Ok` explicitly on screens where the default is the wrong one). Local
+   CDROM; Install (not Upgrade); **fdisk** not Disk Druid (it runs `pdisk`, where
+   `w` then `q` is enough since the map is already good); on "Current Disk
+   Partitions" select `sda2` and **F3** to set its mount point to `/`; format
+   `sda2`; component **Server Lite (No X)** (247 packages, ~309 MB); accept the
+   dependency pull-in. Post-install: mouse = *Apple Desktop Bus 1 Button (ADB)*;
+   skip LAN networking; US/Eastern, hardware clock as local time; default
+   services; root password (set to `dingusppc`); shadow+MD5 auth.
+5. **Set `rootdev` to the installed partition.** The installer says so outright
+   ("You must manually edit your lilo.conf ... Set rootdev equal to /dev/sda2") -
+   it does not touch the Mac OS booter itself. Press return to let it reboot
+   cleanly (this unmounts and syncs the target), stop the emulator while it is
+   early in the *next* boot, and flip the live `rootdev` from `/dev/scd0` to
+   `/dev/sda2` with the same length-preserving host edit. Boot again with no CD:
+   `--hdd_img macos-performa.img --scsi_hdd_img mklinux-r2.img`.
 
-Two things to expect:
+### What you get
 
-* **It will take hours.** At ~150 KB/s an R2 install moves several hundred
-  megabytes. Do not kill the emulator partway: a dirty root filesystem costs a
-  full `fsck` on the next boot, which is slower still. Repair it from the host
-  instead (below).
-* **Writes are the least-tested path in the emulator**, though less so than
-  before: a `dd` of 2 MB from `/dev/zero` to the SCSI root disk, synced, went
-  through in 1.6 s (~1.3 MB/s) with no hang or error, so DATA_OUT through the
-  handshake port (`c3528e54`) survives bulk writes. An install writes hundreds
-  of megabytes over many small files, which is still heavier than anything tried,
-  so it remains the first place to look if it goes wrong.
+MkLinux Release 2.0, `2.0.38-osfmach3`, Red Hat 6.2 (Zoot), to a login in about
+two minutes. `root` / `dingusppc`. `df` shows `/` on `/dev/sda2`, swap active on
+`sda3`, all 247 packages in the rpm database, and a 2 MB `dd`+`sync` to the
+installed root goes through cleanly.
 
-Unknowns worth settling cheaply before committing to a long run - both now
-**settled**, from a root shell on the existing image with the disc attached:
+**It takes about an hour** for Server Lite at this machine's ~150 KB/s (a bigger
+component set is proportionally longer). Do not kill the emulator during the
+package write: a dirty root filesystem costs a full `fsck` next boot. If you must
+recover one, the host's `e2fsck` repairs it in place with the offset syntax below.
 
-* **MkLinux mounts the CD.** `mount -t iso9660 -o ro /dev/scd0 /mnt` succeeds and
-  its contents read back fine - including `MkLinux-install/Place in Extensions
-  Folder/`, whose `Mach Kernel` (1350052) and `Performas Use This!/Mach Kernel`
-  (1612796) match the sizes in [Which kernel](#which-kernel) to the byte.
-* **The SCSI probe copes with three targets.** `/proc/scsi/scsi` lists both
-  Emulated Disks (ID 0, 1) and the `SONY CD-ROM CDU-8003A` (ID 3) cleanly; the
-  absent-IDE-device-1 wedge that used to break the scan is fixed and does not
-  return with a third target on the bus.
+Two facts settled along the way, from a root shell before the install:
 
-The disc is a hybrid: alongside `MkLinux-install/` it carries yaboot and a
-`vmlinux-2.2.26mk` for LinuxPPC, which are not part of the MkLinux path.
+* **MkLinux mounts the CD** and the SCSI probe copes with three targets at once
+  (`/proc/scsi/scsi` lists both disks and the `SONY CD-ROM CDU-8003A`); the
+  absent-IDE-device-1 wedge that used to break the scan does not return.
+* The disc is a hybrid: alongside `MkLinux-install/` it carries yaboot and a
+  `vmlinux-2.2.26mk` for LinuxPPC, which are not part of the MkLinux path.
 
 ## What is left: speed
 
