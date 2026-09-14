@@ -11,7 +11,7 @@ index d3d2ffa..ebdef48 100644
  ppc/POWERMAC/mesh.c		optional mesh device-driver
  
 diff --git a/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c b/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
-index 04e3632..050c0c1 100644
+index 04e3632..956a5f6 100644
 --- a/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
 +++ b/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
 @@ -610,7 +610,7 @@ struct	bus_driver asc_driver =
@@ -43,7 +43,49 @@ index 04e3632..050c0c1 100644
  		asc->regs = (asc_curio_regmap_t *)PERFORMA_ASC_BASE_PHYS;
  		break;
  
-@@ -2669,11 +2680,19 @@ done:
+@@ -714,12 +725,20 @@ asc_probe(
+ 	regs = asc->regs = (asc_curio_regmap_t *)
+ 			POWERMAC_IO((vm_offset_t)asc->regs);
+ 
+-	asc->clk = asc_clock_speed_in_mhz[unit];
+-
+-	if (unit == 1)
+-		asc->ccf = ASC_CCF_20MHz;
+-	else
++	/* The Performa's single Curio is a 40 MHz 53CF94 even though we
++	   enumerate it as unit 1 (see the PERFORMA case above); the unit-1
++	   clock/type defaults are for the PDM's slow 20 MHz secondary bus. */
++	if (powermac_info.class == POWERMAC_CLASS_PERFORMA) {
++		asc->clk = 40;
+ 		asc->ccf = FAS_CCF_40MHz;
++	} else {
++		asc->clk = asc_clock_speed_in_mhz[unit];
++
++		if (unit == 1)
++			asc->ccf = ASC_CCF_20MHz;
++		else
++			asc->ccf = FAS_CCF_40MHz;
++	}
+ 
+ 	asc->timeout = asc_timeout_250(asc->clk, asc->ccf);
+ 
+@@ -757,7 +776,14 @@ asc_probe(
+ 
+ 	asc->max_scsi_offset = ASC_MAX_OFFSET;
+ 
+-	switch (unit) {
++	/* The Performa's Curio is a Fast 53CF94 (unit 1 numbering aside), so it
++	   wants the 40 MHz period and the 24-bit transfer count enabled by the
++	   53CF94 config path - the same profile unit 0 uses on other machines. */
++	if (powermac_info.class == POWERMAC_CLASS_PERFORMA) {
++		asc->min_period = ASC_MIN_PERIOD_40;
++		asc->type = ASC_NCR_53CF94;
++		asc->max_transfer = FSC_TC_MAX;
++	} else switch (unit) {
+ 	case	1:
+ 		asc->min_period = ASC_MIN_PERIOD_20;
+ 		asc->type = ASC_NCR_53C94;
+@@ -2669,11 +2695,19 @@ done:
  		/* Check to make sure the address and count
  		 * can be used to do a DMA transfer.
  		 */

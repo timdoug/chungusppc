@@ -12,7 +12,7 @@
     "patched_files": {
       "src/mach_kernel/ppc/ppc_init.c": "0b2df359184a33a7b0e7dfeb43c8ffd9f85b4e3af941ca4e0e6e2223ce24df32",
       "src/mach_kernel/ppc/POWERMAC/floppy/swimiiicommonhal.c": "91fd271fc77aabd70ee12deafcd9f746ed0f232f02fd1b0224d7ca1745304e0f",
-      "src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c": "2b68c91d4e64a0ba2163b731912e1dcaf78291acda6f1441d2d6530304e52177",
+      "src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c": "8549024fae35bc0fba45938659bc2977a40ed6bfcfc2202627a61d37692958f3",
       "src/mach_kernel/conf/POWERMAC/files": "bbcf327715b034df267c76395be199c4f3306528a4dc677d3fea27205eebb4d7",
       "src/mach_kernel/ppc/POWERMAC/scsi_curio_pdma.c": "110e2adf51431679190b2971ee78c15cc906d26e42d2b8d39aeb15386af0d3c5",
       "src/mach_kernel/ppc/POWERMAC/video_valkyrie.c": "d15e3ca72a3bd6678b549c226f35619de1e4dd4891d55e9b97fedffe524e0dd8",
