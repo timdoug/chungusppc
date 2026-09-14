@@ -181,8 +181,10 @@ two minutes. `root` / `dingusppc`. `df` shows `/` on `/dev/sda2`, swap active on
 `sda3`, all 247 packages in the rpm database, and a 2 MB `dd`+`sync` to the
 installed root goes through cleanly.
 
-**It takes about an hour** for Server Lite at this machine's ~150 KB/s (a bigger
-component set is proportionally longer). Do not kill the emulator during the
+**It takes about an hour** for Server Lite (a bigger component set is
+proportionally longer). The read fix below does not touch the write path
+(`DATA_OUT`), which has not been profiled the same way; the install is mostly
+writes, so it is not meaningfully faster yet. Do not kill the emulator during the
 package write: a dirty root filesystem costs a full `fsck` next boot. If you must
 recover one, the host's `e2fsck` repairs it in place with the offset syntax below.
 
@@ -196,21 +198,28 @@ Two facts settled along the way, from a root shell before the install:
 
 ## What is left: speed
 
-This machine manages about **150 KB/s** over SCSI where a 6100 over AMIC DMA manages **6.9 MB/s**.
-MkLinux moves every byte through the FIFO register with roughly three chip
-commands each, having no pseudo-DMA path, which is what its own README means by
-`SCSI is working, but rather slow... partially a lack of pseudo-DMA code`. A
-clean boot takes about two minutes; anything heavier is correspondingly slow.
+MkLinux has no pseudo-DMA path for this machine; its Mach driver moves every
+byte through the FIFO register in a polled loop, which is what its own README
+means by `SCSI is working, but rather slow... partially a lack of pseudo-DMA
+code`. So it stays slower than the DMA machines - a 6100 over AMIC DMA manages
+**6.9 MB/s** - and will until the guest driver changes, which is off-limits.
 
-**This is the guest's, not ours - do not go hunting for an emulator fix.**
-Counting register accesses during a read puts it at ~18 MMIO per data byte
-(the Command register alone is written 4x and read 5x, plus Config_1/Config_3
-rewrites and status polls), and reads run ~10x slower than writes for that
-reason. Our sequencer already answers synchronously, and virtual time is
-instruction-count based (`g_realtime` off), so the emulator runs flat out;
-raising the emulated clock (`icnt_factor`) only makes the guest's instruction-
-bound loop finish in *more* wall time, not less. Tested. The only levers left
-are interpreter-level (a JIT) or the guest driver itself, which is off-limits.
+One part of the slowness was ours, though, and is fixed (`1144efdd`). A non-DMA
+Transfer Information on the real 53C94 fills the FIFO off the bus; our
+`rcv_data()` handed back a single byte, so the driver's loop - which reads FIFO
+Flags for the count and drains that many - ran once per byte instead of once
+per FIFO. Filling the FIFO to match the chip cut register traffic from ~9 to
+~1.5 accesses per data byte and took a 16 MB read from **2m35s to 50s** (about
+106 to 326 KB/s), with `fsck`, the gzip kernel and `dd` record counts all still
+clean. The way to find this is to count register accesses per byte during a
+read (a non-DMA data-in should approach one FIFO fill, not one byte, per
+transfer).
+
+Virtual time is instruction-count based (`g_realtime` off), so the emulator
+runs flat out and raising the emulated clock (`icnt_factor`) only makes the
+guest's instruction-bound loop finish in *more* wall time, not less (tested).
+What is left is the guest's own polled PIO; the remaining levers are
+interpreter-level (a JIT) or the driver itself.
 
 If the guest's root filesystem is left dirty - which killing the emulator does -
 the next boot forces an `fsck` that takes far longer than the boot. The host's
