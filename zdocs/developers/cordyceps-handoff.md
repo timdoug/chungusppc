@@ -202,6 +202,16 @@ commands each, having no pseudo-DMA path, which is what its own README means by
 `SCSI is working, but rather slow... partially a lack of pseudo-DMA code`. A
 clean boot takes about two minutes; anything heavier is correspondingly slow.
 
+**This is the guest's, not ours - do not go hunting for an emulator fix.**
+Counting register accesses during a read puts it at ~18 MMIO per data byte
+(the Command register alone is written 4x and read 5x, plus Config_1/Config_3
+rewrites and status polls), and reads run ~10x slower than writes for that
+reason. Our sequencer already answers synchronously, and virtual time is
+instruction-count based (`g_realtime` off), so the emulator runs flat out;
+raising the emulated clock (`icnt_factor`) only makes the guest's instruction-
+bound loop finish in *more* wall time, not less. Tested. The only levers left
+are interpreter-level (a JIT) or the guest driver itself, which is off-limits.
+
 If the guest's root filesystem is left dirty - which killing the emulator does -
 the next boot forces an `fsck` that takes far longer than the boot. The host's
 `e2fsck` will repair it in place through the offset syntax:
