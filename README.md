@@ -51,8 +51,9 @@ We've added the Power Macintosh 5200 and Performa 6200, including their F108 and
 PrimeTime II custom ICs. MkLinux boots on both:
 `pm5200` and `pm6200` reach a login in color with keyboard and mouse on the
 Performa Mach kernel, and a full R2 install runs from CD onto a blank disk
-(Release 2.0, Linux 2.0.38, Red Hat 6.2). Their SCSI has no DMA engine, so
-transfers run at about 150 KB/s. The
+(Release 2.0, Linux 2.0.38, Red Hat 6.2). Their SCSI has no DMA engine and
+MkLinux drives it with polled PIO, so it stays slow, though a fix to the
+non-DMA FIFO path roughly tripled read throughput. The
 [bring-up notes](zdocs/developers/cordyceps-handoff.md) have the details.
 
 ## Build
