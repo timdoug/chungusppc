@@ -154,19 +154,27 @@ Two things to expect:
   megabytes. Do not kill the emulator partway: a dirty root filesystem costs a
   full `fsck` on the next boot, which is slower still. Repair it from the host
   instead (below).
-* **Writes are the least-tested path in the emulator.** Everything verified so
-  far is read-dominated. DATA_OUT through the SCSI handshake port (`c3528e54`)
-  is new, and the heaviest use it has had is `fsck` repairing a few inodes. An
-  install is the first real write test, so that is the first place to look if it
-  goes wrong.
+* **Writes are the least-tested path in the emulator**, though less so than
+  before: a `dd` of 2 MB from `/dev/zero` to the SCSI root disk, synced, went
+  through in 1.6 s (~1.3 MB/s) with no hang or error, so DATA_OUT through the
+  handshake port (`c3528e54`) survives bulk writes. An install writes hundreds
+  of megabytes over many small files, which is still heavier than anything tried,
+  so it remains the first place to look if it goes wrong.
 
-Unknowns worth settling cheaply before committing to a long run:
+Unknowns worth settling cheaply before committing to a long run - both now
+**settled**, from a root shell on the existing image with the disc attached:
 
-* Whether MkLinux mounts the CD at all - needs a shell, so it needs the root
-  password on the existing image, or an install.
-* Whether the installer's own disk scan copes with this machine's SCSI. The
-  driver's probe of the absent IDE device 1 used to wedge it; that is fixed, but
-  the CD is a third target on a bus that has only ever carried two.
+* **MkLinux mounts the CD.** `mount -t iso9660 -o ro /dev/scd0 /mnt` succeeds and
+  its contents read back fine - including `MkLinux-install/Place in Extensions
+  Folder/`, whose `Mach Kernel` (1350052) and `Performas Use This!/Mach Kernel`
+  (1612796) match the sizes in [Which kernel](#which-kernel) to the byte.
+* **The SCSI probe copes with three targets.** `/proc/scsi/scsi` lists both
+  Emulated Disks (ID 0, 1) and the `SONY CD-ROM CDU-8003A` (ID 3) cleanly; the
+  absent-IDE-device-1 wedge that used to break the scan is fixed and does not
+  return with a third target on the bus.
+
+The disc is a hybrid: alongside `MkLinux-install/` it carries yaboot and a
+`vmlinux-2.2.26mk` for LinuxPPC, which are not part of the MkLinux path.
 
 ## What is left: speed
 
