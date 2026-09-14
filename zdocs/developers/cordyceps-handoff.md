@@ -9,16 +9,20 @@ which roads are already known to be dead ends.
 `pm5200` and `pm6200` boot the ROM to the Mac OS "insert disk" screen with a
 working mouse, boot Mac OS from an IDE image, hand over through the MkLinux
 booter, and reach a **MkLinux DR3 login prompt in about two minutes**, in
-colour, with the keyboard working. A SCSI CD-ROM can be attached without
-upsetting any of it. Nothing is known to be broken; what is left is speed, and
-an install.
+colour, with the keyboard working. You can now **log in** (root / dingusppc) and
+get a shell. A SCSI CD-ROM can be attached without upsetting any of it, and from
+the shell **it mounts** - `/dev/scd0` as iso9660, contents readable. Nothing is
+known to be broken; what is left is speed, and an install.
 
 Note what that does *not* include. The `mklinux.img` this boots was installed on
 a `pm7200` in an earlier session and simply carried across - MkLinux above Mach
 is portable enough that it came up. **Nothing has ever been installed on this
-machine**, and the login prompt has never been got past, because the root
-password on that image is not written down anywhere. See
-[Installing on a 6200CD](#installing-on-a-6200cd).
+machine**. See [Installing on a 6200CD](#installing-on-a-6200cd).
+
+The root login on `mklinux.img` is **`root` / `dingusppc`** (DES `crypt`, so only
+the first eight characters `dinguspp` are actually checked; the hash in
+`/etc/passwd` is `CEBKNA7IFnXxE`). That was not written down before and is what
+had kept the login prompt from ever being got past.
 
 **Run the Performa kernel.** Everything above depends on it - see
 [Which kernel](#which-kernel).
