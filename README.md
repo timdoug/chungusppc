@@ -47,7 +47,8 @@ and commands for rebuilding Mach and Linux in MkLinux.
 
 ## Performa 6200
 
-We've added the Power Macintosh 5200 and Performa 6200. MkLinux boots on both:
+We've added the Power Macintosh 5200 and Performa 6200, including their F108 and
+PrimeTime II custom ICs. MkLinux boots on both:
 `pm5200` and `pm6200` reach a login in color with keyboard and mouse on the
 Performa Mach kernel, and a full R2 install runs from CD onto a blank disk
 (Release 2.0, Linux 2.0.38, Red Hat 6.2). Their SCSI has no DMA engine, so
