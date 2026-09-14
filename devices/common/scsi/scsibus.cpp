@@ -413,6 +413,12 @@ void ScsiBus::attach_scsi_devices(const std::string bus_suffix)
             this->register_device(scsi_id, scsi_device);
             if (!path.empty() && !scsi_device->insert_image(path))
                 ABORT_F("Could not insert CD-ROM image, %s", path.c_str());
+            if (path.empty())
+                LOG_F(INFO, "%s: empty CD-ROM drive attached at ID %d",
+                      this->get_name().c_str(), scsi_id);
+            else
+                LOG_F(INFO, "%s: CD-ROM \"%s\" attached at ID %d",
+                      this->get_name().c_str(), path.c_str(), scsi_id);
         }
         else {
             LOG_F(ERROR, "%s: Too many devices. CD-ROM \"%s\" was not added.",
