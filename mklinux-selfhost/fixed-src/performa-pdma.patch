@@ -11,7 +11,7 @@ index d3d2ffa..ebdef48 100644
  ppc/POWERMAC/mesh.c		optional mesh device-driver
  
 diff --git a/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c b/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
-index 04e3632..2600089 100644
+index 04e3632..050c0c1 100644
 --- a/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
 +++ b/src/mach_kernel/ppc/POWERMAC/scsi_53C94_hdw.c
 @@ -610,7 +610,7 @@ struct	bus_driver asc_driver =
@@ -23,20 +23,27 @@ index 04e3632..2600089 100644
  
  int	asc_clock_speed_in_mhz[NASC] = {
  40
-@@ -685,7 +685,11 @@ asc_probe(
+@@ -685,7 +685,18 @@ asc_probe(
  		break;
  
  	case	POWERMAC_CLASS_PERFORMA:
 -		asc->dma_ops = NULL;
 +		/*
++		 * A single Curio, like the PCI machines - treat it as unit 1
++		 * so its interrupt (PMAC_DEV_SCSI0, registered below) and the
++		 * device->unit mapping in asc_intr() agree. Probing it as both
++		 * units would attach the same chip twice.
++		 *
 +		 * No SCSI DMA engine here; move data through the pseudo-DMA
 +		 * handshake port instead of one byte at a time via the FIFO.
 +		 */
++		if (unit != 1)
++			return 0;
 +		asc->dma_ops = &scsi_curio_pdma_ops;
  		asc->regs = (asc_curio_regmap_t *)PERFORMA_ASC_BASE_PHYS;
  		break;
  
-@@ -2669,11 +2673,19 @@ done:
+@@ -2669,11 +2680,19 @@ done:
  		/* Check to make sure the address and count
  		 * can be used to do a DMA transfer.
  		 */
