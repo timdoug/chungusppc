@@ -45,6 +45,24 @@ The [build notes](mklinux-selfhost/README.md) have the patches, source checksums
 and commands for rebuilding Mach and Linux in MkLinux.
 [Current status and next checks](mklinux-selfhost/STATUS.md).
 
+## Performa 6200
+
+The low-end 5200/6200 family runs MkLinux too — different silicon from the
+desktops above, brought up from scratch:
+
+- **Boots to a MkLinux login** on `pm5200`/`pm6200`, in color with keyboard and
+  mouse, on the machine's own factory Performa Mach kernel — no guest patches.
+  Getting there meant teaching the emulator the Valkyrie display, the F108's
+  cascaded interrupts, and a 53C94 SCSI bus with no DMA engine at all.
+- **A full MkLinux R2 install runs on it, from CD to login** — partition, format,
+  247 packages, post-install, reboot — landing Release 2.0 (Linux 2.0.38, Red Hat
+  6.2) on a blank disk entirely inside the emulated 6200CD.
+- SCSI is faithful, not faked: MkLinux's byte-at-a-time PIO with no pseudo-DMA,
+  ~150 KB/s — slow exactly like the real hardware is.
+
+The [bring-up notes](zdocs/developers/cordyceps-handoff.md) have the install
+recipe and the register-level detail.
+
 ## Build
 
 Requires a C++20 compiler, CMake and SDL2. Install libslirp and pkg-config for
