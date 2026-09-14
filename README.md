@@ -47,14 +47,12 @@ and commands for rebuilding Mach and Linux in MkLinux.
 
 ## Performa 6200
 
-The 5200/6200 family boots MkLinux as well. `pm5200` and `pm6200` reach a MkLinux
-login in color with keyboard and mouse, running the Performa Mach kernel. This
-needed the Valkyrie display, the F108 interrupt controller and a 53C94 SCSI bus
-with no DMA engine, none of which the desktops use. A full R2 install also runs
-here from CD, laying down Release 2.0 (Linux 2.0.38, Red Hat 6.2) on a blank disk.
-SCSI has no pseudo-DMA path, so transfers run at about 150 KB/s. The
-[bring-up notes](zdocs/developers/cordyceps-handoff.md) have the install recipe
-and register-level detail.
+We've added the Power Macintosh 5200 and Performa 6200. MkLinux boots on both:
+`pm5200` and `pm6200` reach a login in color with keyboard and mouse on the
+Performa Mach kernel, and a full R2 install runs from CD onto a blank disk
+(Release 2.0, Linux 2.0.38, Red Hat 6.2). Their SCSI has no DMA engine, so
+transfers run at about 150 KB/s. The
+[bring-up notes](zdocs/developers/cordyceps-handoff.md) have the details.
 
 ## Build
 
