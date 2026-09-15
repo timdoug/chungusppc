@@ -40,10 +40,28 @@ index 8ecbeb7..79ed799 100644
  	default:
  	case POWERMAC_CLASS_PCI:
 diff --git a/src/mach_kernel/ppc/POWERMAC/interrupt_performa.c b/src/mach_kernel/ppc/POWERMAC/interrupt_performa.c
-index 33a5a34..34ea976 100644
+index 33a5a34..cc93372 100644
 --- a/src/mach_kernel/ppc/POWERMAC/interrupt_performa.c
 +++ b/src/mach_kernel/ppc/POWERMAC/interrupt_performa.c
-@@ -324,7 +324,16 @@ printf("interrupt_initialize called.  Setting PERFORMA_ICR\n");
+@@ -168,10 +168,15 @@ struct powermac_interrupt performa_via1_portb_interrupts[8] = {
+ };
+ 
+ 
++/* The cascaded slot interrupt (which carries the F108's IDE and video lines)
++ * arrives on VIA2 IFR bit 1, "any slot" - the same bit the M2 handler this was
++ * adapted from uses, and the level-2 slot request described in the developer
++ * note. The handler had been left one slot too low, on bit 2, so the scan never
++ * reached it and disk interrupts were dropped. */
+ struct powermac_interrupt performa_via2_interrupts[8] = {
+ 		{ 0,		0,	-1 },			/* SCSI DMA IRQ (not used) */
+-		{ 0, 		0,	-1 },			/* any slot */
+- {performa_via2_slot_interrupt,	0,	-1},			/* reserved (0) */
++ {performa_via2_slot_interrupt,	0,	-1},			/* any slot */
++		{ 0, 		0,	-1 },			/* reserved (0) */
+ 		{ 0,		0,	PMAC_DEV_SCSI0 },	/* SCSI IRQ */
+ 		{ 0,		0,	PMAC_DMA_AUDIO_OUT },	/* Really Sound IRQ!!! */
+ 		{ 0, 		0,	-1 },			/* any button */
+@@ -324,7 +329,16 @@ printf("interrupt_initialize called.  Setting PERFORMA_ICR\n");
  		PERFORMA_CAPELLA_SIZE);
  	*(v_u_long*)(capella_base_virt + CAPELLA_INT_REG_OFFSET) = 0x00;
  #else
