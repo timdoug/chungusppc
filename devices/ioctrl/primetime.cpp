@@ -445,9 +445,14 @@ void PrimeTimeTwo::ack_slot_int(uint8_t slot_int, uint8_t irq_line_state)
 
 void PrimeTimeTwo::ack_via2_int(uint8_t via2_int, uint8_t irq_line_state)
 {
-    if (irq_line_state)
+    if (irq_line_state) {
         this->via2_ifr |= via2_int;
-    else
+        // Record the assertion even when the "any interrupt" summary was
+        // already set by another source: the aggregate line does not change,
+        // but the nanokernel still owes the 68k a fresh interrupt for it.
+        if (via2_int & this->via2_ier)
+            this->int_since_read = true;
+    } else
         this->via2_ifr &= ~via2_int;
     this->update_via2_irq();
 }
@@ -472,9 +477,10 @@ void PrimeTimeTwo::update_via2_irq()
 // as soon as each rte restores the unmasked status register.
 void PrimeTimeTwo::ack_cpu_int(uint8_t level_mask, uint8_t irq_line_state)
 {
-    if (irq_line_state)
+    if (irq_line_state) {
         this->cpu_int_lines |= level_mask;
-    else
+        this->int_since_read = true;
+    } else
         this->cpu_int_lines &= ~level_mask;
 
     if (this->get_int_level() != this->acked_level && !this->cpu_irq) {
@@ -507,6 +513,17 @@ void PrimeTimeTwo::clear_cpu_int()
         ppc_release_int();
         LOG_F(9, "%s: CPU INT acknowledged at level %d", this->name.c_str(),
               this->acked_level);
+    }
+
+    // A source that asserted after the nanokernel last read the pending level
+    // (i.e. while the 68k handler was running) leaves an interrupt the handler
+    // never saw: the level can be unchanged, so the edge test above would not
+    // re-fire. Re-assert once here so the nanokernel re-enters and delivers it.
+    // Gating on int_since_read keeps a still-asserted, already-serviced source
+    // from re-triggering forever.
+    if (this->int_since_read && this->acked_level) {
+        this->cpu_irq = true;
+        ppc_assert_int();
     }
 }
 

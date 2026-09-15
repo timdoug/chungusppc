@@ -155,6 +155,10 @@ public:
     /** Called for writes to Capella's interrupt acknowledge register. */
     void clear_cpu_int();
 
+    /** Called when the nanokernel reads Capella's interrupt status register,
+        i.e. when it observes the currently pending 68k interrupt level. */
+    void note_int_level_read() { this->int_since_read = false; }
+
     /** Highest pending 68k interrupt priority level, or zero when idle. */
     uint8_t get_int_level() const;
 
@@ -203,6 +207,15 @@ private:
     uint8_t     escc_irq_lines = 0;
     uint8_t     cpu_int_lines = 0;
     uint8_t     acked_level   = 0; // priority level the nanokernel last read
+
+    // Set whenever a source asserts an interrupt, cleared when the nanokernel
+    // reads the pending level. If a source asserts while the 68k handler is
+    // running - MkLinux chains the next disk command from inside its own
+    // interrupt handler, and the drive raises the next INTRQ before the handler
+    // acknowledges Capella - the level can be unchanged at acknowledge time and
+    // the new interrupt would otherwise never be delivered. This flag lets
+    // clear_cpu_int re-assert the 68k interrupt for that case.
+    bool        int_since_read = false;
 
     uint8_t     via2_irq      = 0;
     uint8_t     slot_irq      = 0;

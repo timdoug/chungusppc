@@ -59,8 +59,10 @@ uint32_t F108::read(uint32_t rgn_start, uint32_t offset, int size)
     // interrupt priority level of the emulated 68k. All ones therefore means
     // "nothing pending"; returning zero would look like a level 7 interrupt,
     // i.e. an NMI.
-    if (offset == Capella::INT_STATUS && this->prime_time)
+    if (offset == Capella::INT_STATUS && this->prime_time) {
+        this->prime_time->note_int_level_read();
         return ~this->prime_time->get_int_level() & 7;
+    }
 
     return this->capella_regs[(offset >> 2) & 0x3F];
 }
