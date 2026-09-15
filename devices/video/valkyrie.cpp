@@ -70,10 +70,20 @@ int ValkyrieVideo::device_postinit() {
     this->irq_id = this->int_ctrl->register_dev_int(IntSrc::VALKYRIE);
 
     this->vbl_cb = [this](uint8_t irq_line_state) {
-        if (!(this->int_latch & Valkyrie::VBL_IRQ) && irq_line_state) {
+        if (irq_line_state) {
+            // Vertical blanking started: latch the status flag and, if the VBL
+            // interrupt is enabled, raise the interrupt line.
             this->int_latch |= Valkyrie::VBL_IRQ;
             if (this->int_en & Valkyrie::VBL_IRQ)
-                this->int_ctrl->ack_int(this->irq_id, irq_line_state);
+                this->int_ctrl->ack_int(this->irq_id, 1);
+        } else {
+            // Vertical blanking ended: the interrupt line follows the VBL
+            // signal and drops again. The status flag stays latched until the
+            // driver clears it, but the line must not be held for the whole
+            // frame - on this machine the VBL feeds the VIA2 "any slot" input,
+            // which is edge-triggered, so a permanently asserted line would
+            // mask every other slot source (the cascaded F108/IDE interrupt).
+            this->int_ctrl->ack_int(this->irq_id, 0);
         }
     };
 
