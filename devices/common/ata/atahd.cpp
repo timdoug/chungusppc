@@ -116,8 +116,12 @@ int AtaHardDisk::perform_command() {
             if (this->r_command == READ_MULTIPLE) {
                 if (!this->sectors_per_int) {
                     LOG_F(ERROR, "%s: READ_MULTIPLE disabled", this->name.c_str());
+                    this->r_error  |= ABRT;
                     this->r_status |= ERR;
                     this->r_status &= ~BSY;
+                    // An aborted command still asserts INTRQ; without it the
+                    // host driver waits for an interrupt that never comes.
+                    this->update_intrq(1);
                     break;
                 }
                 ints_size *= this->sectors_per_int;
@@ -155,8 +159,12 @@ int AtaHardDisk::perform_command() {
             if (this->r_command == WRITE_MULTIPLE) {
                 if (!this->sectors_per_int) {
                     LOG_F(ERROR, "%s: WRITE_MULTIPLE disabled", this->name.c_str());
+                    this->r_error  |= ABRT;
                     this->r_status |= ERR;
                     this->r_status &= ~BSY;
+                    // An aborted command still asserts INTRQ; without it the
+                    // host driver waits for an interrupt that never comes.
+                    this->update_intrq(1);
                     break;
                 }
                 ints_size *= this->sectors_per_int;
