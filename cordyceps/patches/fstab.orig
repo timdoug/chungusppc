@@ -1,0 +1,6 @@
+/dev/sda2               /                       ext2    defaults        1 1
+/dev/sda3               swap                    swap    defaults        0 0
+/dev/fd0                /mnt/floppy             ext2    noauto          0 0
+/dev/cdrom              /mnt/cdrom              iso9660 noauto,ro       0 0
+none                    /proc                   proc    defaults        0 0
+none                    /dev/pts                devpts  mode=0622       0 0
