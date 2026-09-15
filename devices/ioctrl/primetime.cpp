@@ -131,9 +131,18 @@ uint32_t PrimeTimeTwo::read(uint32_t rgn_start, uint32_t offset, int size)
         }
     }
 
-    LOG_F(WARNING, "%s: unknown register read @%x.%c from PC=0x%08x",
-          this->name.c_str(), rgn_start + offset, SIZE_ARG(size), ppc_state.pc);
-    return 0;
+    // Unmodeled PrimeTime II sub-block - back it with a register file (see the
+    // io_stub_regs comment in the header). Warn once per offset so a genuinely
+    // new access still shows up in the log.
+    if (!this->io_stub_warned[offset]) {
+        this->io_stub_warned[offset] = true;
+        LOG_F(WARNING, "%s: unmodeled register read @%x.%c from PC=0x%08x",
+              this->name.c_str(), rgn_start + offset, SIZE_ARG(size), ppc_state.pc);
+    }
+    {
+        auto it = this->io_stub_regs.find(offset);
+        return (it != this->io_stub_regs.end()) ? it->second : 0;
+    }
 }
 
 void PrimeTimeTwo::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
@@ -187,9 +196,14 @@ void PrimeTimeTwo::write(uint32_t rgn_start, uint32_t offset, uint32_t value, in
         return;
     }
 
-    LOG_F(WARNING, "%s: unknown register write @%x.%c = %0*x from PC=0x%08x",
-          this->name.c_str(), rgn_start + offset, SIZE_ARG(size), size * 2, value,
-          ppc_state.pc);
+    // Unmodeled PrimeTime II sub-block - see the io_stub_regs comment.
+    if (!this->io_stub_warned[offset]) {
+        this->io_stub_warned[offset] = true;
+        LOG_F(WARNING, "%s: unmodeled register write @%x.%c = %0*x from PC=0x%08x",
+              this->name.c_str(), rgn_start + offset, SIZE_ARG(size), size * 2, value,
+              ppc_state.pc);
+    }
+    this->io_stub_regs[offset] = value;
 }
 
 // ============================== VIA2 registers ==============================
