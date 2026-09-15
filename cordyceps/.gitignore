@@ -1,0 +1,5 @@
+# Large binaries and the upstream MkLinux osfmk source tree: kept locally for the
+# investigation but not committed (regenerable / not ours / too big).
+kernels/
+server/
+osfmk-src/
