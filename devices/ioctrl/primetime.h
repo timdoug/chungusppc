@@ -45,6 +45,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <cinttypes>
 #include <memory>
+#include <unordered_map>
 
 class EsccController;
 class IdeChannel;
@@ -186,6 +187,19 @@ private:
     uint8_t     slot_ier      = 0;
     uint8_t     f108_ifr      = 0;
     uint8_t     asc_regs[0x800] = {};
+
+    // PrimeTime II integrates several sub-blocks whose register layouts are
+    // internal to the custom IC and undocumented - an aux VIA-like block at
+    // 0x1E000/0x1F000, video/DMA channel registers at 0x0E000, a command
+    // sub-controller at 0x0A000 and GPIO lines at 0x18000. The ROM's power-on
+    // self test writes each and reads it back to confirm the block is alive,
+    // then bails into the serial debugger (MicroBug) if the read does not
+    // match; MkLinux itself never touches any of them. We don't model these
+    // blocks, so back the otherwise-unmapped I/O window with a small register
+    // file: that satisfies the write/read-back check without pretending to be
+    // any particular device (returning 0 or a floating 0xFF fails POST).
+    std::unordered_map<uint32_t, uint8_t> io_stub_regs;
+    std::unordered_map<uint32_t, bool>    io_stub_warned;
     uint8_t     escc_irq_lines = 0;
     uint8_t     cpu_int_lines = 0;
     uint8_t     acked_level   = 0; // priority level the nanokernel last read
