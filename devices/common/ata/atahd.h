@@ -77,7 +77,12 @@ private:
     uint8_t     heads;
     uint8_t     sectors;
 
-    uint8_t     sectors_per_int  = 0; // sectors per interrupt for READ_MULTIPLE/WRITE_MULTIPLE
+    // Sectors transferred per interrupt for READ_MULTIPLE/WRITE_MULTIPLE.
+    // The drive powers on with its maximum multi-block size already selected,
+    // as period ATA drives do: some hosts (MkLinux's wd driver among them) never
+    // issue SET_MULTIPLE_MODE and expect READ_MULTIPLE to work against the value
+    // reported in IDENTIFY word 47.
+    uint8_t     sectors_per_int  = SECTORS_PER_INT;
     uint8_t     cur_dma_mode     = 2; // current multi-word DMA mode
 
     char * buffer = new char[1 <<17];
