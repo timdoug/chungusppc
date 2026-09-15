@@ -385,8 +385,18 @@ void PrimeTimeTwo::ack_f108_int(uint8_t f108_int, uint8_t irq_line_state)
 
 void PrimeTimeTwo::update_f108_irq()
 {
-    uint8_t flags   = this->f108_ifr & ~(F108_INT_ENABLE | F108_INT_IRQ);
-    uint8_t new_irq = !!(flags && (this->f108_ifr & F108_INT_ENABLE));
+    // The two enable bits gate only the infrared and closed-caption sources -
+    // MkLinux's f108_register_int calls bit 0 the "IR Interrupt Enable" and
+    // bit 1 the "Close Caption Int Enable". The IDE and VBL flags are always
+    // live. MkLinux never sets the enables (its interrupt setup writes 0xFC,
+    // clearing them) and reaches the drives through the F108 line alone, so
+    // gating the whole output on them would wedge disk I/O forever.
+    uint8_t flags = this->f108_ifr & (F108_INT_IDE0 | F108_INT_IDE1 | F108_INT_VBL);
+    if (this->f108_ifr & 0x01) // IR enable
+        flags |= this->f108_ifr & F108_INT_IR;
+    if (this->f108_ifr & 0x02) // closed-caption enable
+        flags |= this->f108_ifr & F108_INT_CC;
+    uint8_t new_irq = !!flags;
     this->f108_ifr = (this->f108_ifr & ~F108_INT_IRQ) | (new_irq ? F108_INT_IRQ : 0);
     if (new_irq != this->f108_irq) {
         this->f108_irq = new_irq;
@@ -403,15 +413,20 @@ void PrimeTimeTwo::ack_slot_int(uint8_t slot_int, uint8_t irq_line_state)
     else
         this->slot_ifr |= slot_int;
 
-    // Any asserted slot line raises VIA2's "any slot" flag; the masking that
-    // matters is VIA2's own IER. There is no per-slot enable to consult -
-    // MkLinux never writes one, and its handler reaches the cascaded F108 by
-    // way of VIA2 bit 1 alone.
-    uint8_t new_irq = !!(~this->slot_ifr & 0x7F);
-    if (new_irq != this->slot_irq) {
-        this->slot_irq = new_irq;
-        this->ack_via2_int(VIA2_INT_ALL_SLOT, new_irq);
-    }
+    this->slot_irq = !!(~this->slot_ifr & 0x7F);
+
+    // VIA2's "any slot" flag latches on each slot line that becomes active,
+    // i.e. on the edge of the individual line, not of the aggregate. A source
+    // asserting must set it even when another line is already active - else the
+    // cascaded F108/IDE line is masked whenever the video VBL line is high (the
+    // ROM enables Valkyrie's VBL and MkLinux never services it, so that line
+    // stays asserted for the whole run). When a line drops, clear the flag only
+    // if no slot line remains asserted. A line that stays asserted without
+    // re-edging never re-sets the flag, so it cannot storm the CPU.
+    if (irq_line_state)
+        this->ack_via2_int(VIA2_INT_ALL_SLOT, 1);
+    else if (!this->slot_irq)
+        this->ack_via2_int(VIA2_INT_ALL_SLOT, 0);
 }
 
 void PrimeTimeTwo::ack_via2_int(uint8_t via2_int, uint8_t irq_line_state)
