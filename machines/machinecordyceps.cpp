@@ -73,6 +73,20 @@ int MachineCordyceps::initialize(const std::string &id) {
         return -1;
     }
 
+    // The ROM's nanokernel runs the Mac ROM's 68k code under emulation, and that
+    // code addresses the ROM at its classic 68k base of 0x40800000 rather than
+    // the 603 ROM space at 0x40000000. Without a mirror there the 68k emulator
+    // fetches from unmapped memory (0x4080280C) and the machine wedges just
+    // before userland. Mirror the ROM across 0x40000000-0x41000000 so every
+    // 4 MB alias the decode produces reaches it.
+    for (uint32_t alias = F108Mem::ROM_BASE + F108Mem::ROM_SIZE;
+         alias < F108Mem::ROM_BASE + 0x01000000; alias += F108Mem::ROM_SIZE) {
+        if (!f108_obj->add_mem_mirror(alias, F108Mem::ROM_BASE)) {
+            LOG_F(ERROR, "Could not create ROM alias at 0x%X!", alias);
+            return -1;
+        }
+    }
+
     // install the two RAM SIMMs
     if (f108_obj->install_ram(GET_INT_PROP("rambank1_size"),
                               GET_INT_PROP("rambank2_size"))) {
