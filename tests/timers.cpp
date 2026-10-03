@@ -22,11 +22,12 @@ int main()
     // Model the separate beginning/end timers for a video blanking pulse.
     bool blanking = false;
     std::vector<int> edges;
-    auto start = tm->add_cyclic_timer(100, [&]() {
+    TimerInfo start, end;
+    tm->add_cyclic_timer(start, 100, [&](uint64_t, uint64_t) {
         blanking = true;
         edges.push_back(1);
     });
-    auto end = tm->add_cyclic_timer(100, 110, [&]() {
+    tm->add_cyclic_timer(end, 100, 110, [&](uint64_t, uint64_t) {
         blanking = false;
         edges.push_back(0);
     });
@@ -34,26 +35,27 @@ int main()
     // Both timers missed several deadlines. Deliver each only once, then
     // retain their original phase so the guest can observe the next pulse.
     now = 350;
-    check(tm->process_timers() == 50, "next frame stays on its original deadline");
+    check(tm->process_timers() == 400, "next frame stays on its original deadline");
     check(edges == std::vector<int>({1, 0}), "missed frames do not cause a callback burst");
     now = 400;
-    check(tm->process_timers() == 10, "blanking end stays ten ticks after its start");
+    check(tm->process_timers() == 410, "blanking end stays ten ticks after its start");
     check(blanking, "guest can observe blanking after a delay");
     now = 410;
-    check(tm->process_timers() == 90, "next frame retains its cadence");
+    check(tm->process_timers() == 500, "next frame retains its cadence");
     check(!blanking, "blanking ends at its own deadline");
 
     // Landing exactly on a later deadline must schedule strictly in the future.
     now = 1000;
-    check(tm->process_timers() == 10, "exact missed deadline preserves the other timer's phase");
+    check(tm->process_timers() == 1010, "exact missed deadline preserves the other timer's phase");
     now = 1010;
-    check(tm->process_timers() == 90, "exact deadline does not repeatedly fire a timer");
+    check(tm->process_timers() == 1100, "exact deadline does not repeatedly fire a timer");
     tm->cancel_timer(start);
     tm->cancel_timer(end);
     check(tm->process_timers() == 0, "cyclic timers remain cancellable");
 
     int calls = 0;
-    tm->add_oneshot_timer(20, [&]() { ++calls; });
+    TimerInfo oneshot;
+    tm->add_oneshot_timer(oneshot, 20, [&](uint64_t, uint64_t) { ++calls; });
     now += 100;
     check(tm->process_timers() == 0 && calls == 1, "overdue one-shot fires once");
     tm->process_timers();
