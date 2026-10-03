@@ -1621,7 +1621,9 @@ void dppc_interpreter::ppc_rfi(uint32_t opcode) {
 
 void dppc_interpreter::ppc_sc(uint32_t opcode) {
     do_ctx_sync(); // SC is context synchronizing!
-    ppc_exception_handler(Except_Type::EXC_SYSCALL, 0x20000);
+    // SRR1 takes nothing but MSR bits; on a 603 bit 14 would be MSR[TGPR] once
+    // an OS restores the saved SRR1 as its MSR.
+    ppc_exception_handler(Except_Type::EXC_SYSCALL, 0);
 }
 
 void dppc_interpreter::ppc_tw(uint32_t opcode) {
