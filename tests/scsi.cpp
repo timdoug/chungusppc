@@ -116,6 +116,14 @@ int main() {
             scsi.read(Read::Reg53C94::Int_Status);
         }
     }
+    // A chip reset clears the start count, so the DMA NOP that Linux issues
+    // after resetting loads a zero counter whatever was programmed before.
+    scsi.write(Write::Reg53C94::Xfer_Cnt_LSB, 16);
+    scsi.write(Write::Reg53C94::Xfer_Cnt_MSB, 0);
+    scsi.write(Write::Reg53C94::Command, CMD_RESET_DEVICE);
+    scsi.write(Write::Reg53C94::Command, CMD_NOP | CMD_ISDMA);
+    check(scsi.read(Read::Reg53C94::Xfer_Cnt_LSB) == 0 && scsi.read(Read::Reg53C94::Xfer_Cnt_MSB) == 0,
+          "a chip reset clears the start count");
     std::printf("SCSI: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
