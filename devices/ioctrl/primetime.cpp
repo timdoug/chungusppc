@@ -520,8 +520,12 @@ void PrimeTimeTwo::clear_cpu_int()
     // never saw: the level can be unchanged, so the edge test above would not
     // re-fire. Re-assert once here so the nanokernel re-enters and delivers it.
     // Gating on int_since_read keeps a still-asserted, already-serviced source
-    // from re-triggering forever.
+    // from re-triggering forever. Consume it as well: Linux acknowledges before
+    // it services anything and never reads the level, so the flag would stay
+    // set, and every acknowledge would interrupt again at once. Its IDE driver
+    // re-enables interrupts inside the handler, and that loop starves it.
     if (this->int_since_read && this->acked_level) {
+        this->int_since_read = false;
         this->cpu_irq = true;
         ppc_assert_int();
     }
