@@ -29,6 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <array>
 #include <cinttypes>
+#include <cstring>
 #include <loguru.hpp>
 #include <stdexcept>
 #include <vector>
@@ -195,15 +196,18 @@ static BATResult ppc_block_address_translation(uint32_t la)
     return BATResult{bat_hit, prot, pa};
 }
 
-static inline uint8_t* calc_pteg_addr(uint32_t hash)
+static inline uint32_t calc_pteg_phys(uint32_t hash)
 {
-    uint32_t sdr1_val, pteg_addr;
+    uint32_t sdr1_val = ppc_state.spr[SPR::SDR1];
 
-    sdr1_val = ppc_state.spr[SPR::SDR1];
-
-    pteg_addr = (sdr1_val & 0xFFFF0000) |
+    return (sdr1_val & 0xFFFF0000) |
         (((sdr1_val & 0x1FF) << 16) & ((hash & 0x7FC00) << 6)) |
         ((hash & 0x3FF) << 6);
+}
+
+static inline uint8_t* calc_pteg_addr(uint32_t hash)
+{
+    uint32_t pteg_addr = calc_pteg_phys(hash);
 #if 0 && SUPPORTS_PPC_LITTLE_ENDIAN_MODE
     if (ppc_state.is_LE)
         pteg_addr ^= mem_munge_constant<uint32_t>();
@@ -269,6 +273,119 @@ static bool search_pteg(uint8_t* pteg_addr, uint8_t** ret_pte_addr, uint32_t vsi
     return false;
 }
 
+// ===================== 603 software-loaded TLBs ============================
+// The 603 family doesn't search the page table in hardware. A page translation
+// is looked up in a two-way, 32-set ITLB or DTLB; on a miss the CPU takes an
+// ITLB or DTLB miss exception and the OS loads the entry with tlbli or tlbld
+// (MPC603e User's Manual, 5.5.2 and 6.5).
+
+struct Tlb603Entry {
+    bool     valid;
+    uint32_t vsid;
+    uint32_t ea_tag; // effective page address, EA[0-19]
+    uint32_t pte_lo; // RPN, R, C, WIMG and PP, as loaded from RPA
+};
+
+constexpr uint32_t TLB603_SETS = 32;
+
+static Tlb603Entry tlb603[2][TLB603_SETS][2]; // [TLBType][set][way]
+static uint8_t     tlb603_lru[2][TLB603_SETS]; // way to replace next
+
+static inline uint32_t tlb603_set(uint32_t ea) {
+    return (ea >> PPC_PAGE_SIZE_BITS) & (TLB603_SETS - 1);
+}
+
+// Take an ITLB or DTLB miss exception, giving the handler what it needs to
+// search the page table and load the entry. hit_way names the entry to reload
+// in place when a store found it with C clear.
+static void mpc603_tlb_miss(uint32_t la, uint32_t sr_val, bool is_instr_fetch,
+                            int is_write, unsigned key, int hit_way = -1)
+{
+    Except_Type exc_type = is_instr_fetch ? Except_Type::EXC_ITLB_MISS :
+        is_write ? Except_Type::EXC_DTLB_STORE_MISS : Except_Type::EXC_DTLB_LOAD_MISS;
+
+    // The debugger translates addresses without disturbing the CPU state.
+    if (mmu_exception_handler != ppc_exception_handler) {
+        mmu_exception_handler(exc_type, 0);
+        return;
+    }
+
+    uint32_t page_index = (la >> 12) & 0xFFFF;
+    uint32_t hash1      = (sr_val & 0x7FFFF) ^ page_index;
+    uint32_t cmp        = 0x80000000 | ((sr_val & 0xFFFFFF) << 7) | (page_index >> 10);
+
+    if (is_instr_fetch) {
+        ppc_state.spr[SPR::IMISS] = la;
+        ppc_state.spr[SPR::ICMP]  = cmp;
+    } else {
+        ppc_state.spr[SPR::DMISS] = la;
+        ppc_state.spr[SPR::DCMP]  = cmp;
+    }
+    ppc_state.spr[SPR::HASH1] = calc_pteg_phys(hash1);
+    ppc_state.spr[SPR::HASH2] = calc_pteg_phys(~hash1);
+
+    TLBType tlb_type = is_instr_fetch ? TLBType::ITLB : TLBType::DTLB;
+    uint32_t set     = tlb603_set(la);
+    Tlb603Entry *ways = tlb603[tlb_type][set];
+    uint32_t way = hit_way >= 0 ? hit_way : !ways[0].valid ? 0 : !ways[1].valid ? 1 :
+                   tlb603_lru[tlb_type][set];
+
+    // SRR1[0-3] = CR0, [12] = KEY, [13] = instruction miss, [14] = WAY to
+    // replace, [15] = store; the exception handler adds MSR[16-31].
+    uint32_t srr1_bits = (ppc_state.cr & 0xF0000000) | (key << 19) |
+        (uint32_t(is_instr_fetch) << 18) | (way << 17) | (uint32_t(!!is_write) << 16);
+
+    mmu_exception_handler(exc_type, srr1_bits);
+}
+
+static PATResult mpc603_page_address_translation(uint32_t la, uint32_t sr_val,
+                                                  bool is_instr_fetch,
+                                                  unsigned msr_pr, int is_write)
+{
+    TLBType tlb_type = is_instr_fetch ? TLBType::ITLB : TLBType::DTLB;
+    uint32_t vsid    = sr_val & 0xFFFFFF;
+    unsigned key     = (((sr_val >> 29) & 1) & msr_pr) | (((sr_val >> 30) & 1) & (msr_pr ^ 1));
+    uint32_t set     = tlb603_set(la);
+    Tlb603Entry *ways = tlb603[tlb_type][set];
+
+    uint32_t way;
+    for (way = 0; way < 2; way++) {
+        if (ways[way].valid && ways[way].vsid == vsid &&
+            !((ways[way].ea_tag ^ la) & 0x0FFFF000))
+            break;
+    }
+    if (way == 2) {
+        mpc603_tlb_miss(la, sr_val, is_instr_fetch, is_write, key);
+        return PATResult{0, 0, 0}; // not reached
+    }
+    tlb603_lru[tlb_type][set] = way ^ 1;
+
+    uint32_t pte_lo = ways[way].pte_lo;
+    unsigned pp     = pte_lo & 3;
+
+    if ((key && (!pp || (pp == 1 && is_write))) || (pp == 3 && is_write)) {
+        if (is_instr_fetch) {
+            mmu_exception_handler(Except_Type::EXC_ISI, 0x08000000);
+        } else {
+            ppc_state.spr[SPR::DSISR] = 0x08000000 | (is_write << 25);
+            ppc_state.spr[SPR::DAR]   = la;
+            mmu_exception_handler(Except_Type::EXC_DSI, 0);
+        }
+    }
+
+    // The 603 doesn't update R and C in hardware: a store through an entry
+    // with C clear takes the store miss so that the OS can set it.
+    if (is_write && !(pte_lo & 0x80)) {
+        mpc603_tlb_miss(la, sr_val, false, is_write, key, way);
+    }
+
+    return PATResult{
+        (pte_lo & 0xFFFFF000) | (la & 0x00000FFF),
+        static_cast<uint8_t>((key << 2) | pp),
+        static_cast<uint8_t>(pte_lo & 0x80)
+    };
+}
+
 static PATResult page_address_translation(uint32_t la, bool is_instr_fetch,
                                           unsigned msr_pr, int is_write)
 {
@@ -294,6 +411,9 @@ static PATResult page_address_translation(uint32_t la, bool is_instr_fetch,
     if ((sr_val & 0x10000000) && is_instr_fetch) {
         mmu_exception_handler(Except_Type::EXC_ISI, 0x10000000);
     }
+
+    if (is_603)
+        return mpc603_page_address_translation(la, sr_val, is_instr_fetch, msr_pr, is_write);
 
     page_index = (la >> 12) & 0xFFFF;
     pteg_hash1 = (sr_val & 0x7FFFF) ^ page_index;
@@ -1049,6 +1169,80 @@ void tlb_flush_all_pat()
 
     tlb_invalidate_tracked_entries(gTrackedIEntries, TLBE_FROM_PAT);
     tlb_invalidate_tracked_entries(gTrackedDEntries, TLBE_FROM_PAT);
+}
+
+// Drop our cached page translations for one effective page in every
+// translated mode, so the next access consults the 603 TLB again.
+template <const TLBType tlb_type>
+static void tlb_flush_pat_page(uint32_t ea)
+{
+    const uint32_t tag = ea & PPC_PAGE_MASK;
+    const uint32_t idx = (ea >> PPC_PAGE_SIZE_BITS) & tlb_size_mask;
+
+    auto flush = [tag](TLBEntry *entries, uint32_t count) {
+        for (uint32_t i = 0; i < count; i++) {
+            if (entries[i].tag == tag && (entries[i].flags & TLBFlags::TLBE_FROM_PAT))
+                entries[i].tag = TLB_INVALID_TAG;
+        }
+    };
+
+    if (tlb_type == TLBType::ITLB) {
+        flush(&itlb1_mode2[idx], 1);
+        flush(&itlb1_mode3[idx], 1);
+        flush(&itlb2_mode2[idx * TLB2_WAYS], TLB2_WAYS);
+        flush(&itlb2_mode3[idx * TLB2_WAYS], TLB2_WAYS);
+    } else {
+        flush(&dtlb1_mode2[idx], 1);
+        flush(&dtlb1_mode3[idx], 1);
+        flush(&dtlb2_mode2[idx * TLB2_WAYS], TLB2_WAYS);
+        flush(&dtlb2_mode3[idx * TLB2_WAYS], TLB2_WAYS);
+    }
+}
+
+// tlbld/tlbli: load ICMP/DCMP and RPA into the way SRR1[WAY] selects in the
+// set that EA indexes.
+void mmu_603_tlb_load(TLBType tlb_type, uint32_t ea)
+{
+    uint32_t set = tlb603_set(ea);
+    uint32_t way = (ppc_state.spr[SPR::SRR1] >> 17) & 1;
+    uint32_t cmp = ppc_state.spr[tlb_type == TLBType::ITLB ? SPR::ICMP : SPR::DCMP];
+    Tlb603Entry &entry = tlb603[tlb_type][set][way];
+
+    // Both the evicted page and the reloaded one must miss our caches.
+    if (entry.valid) {
+        if (tlb_type == TLBType::ITLB)
+            tlb_flush_pat_page<TLBType::ITLB>(entry.ea_tag);
+        else
+            tlb_flush_pat_page<TLBType::DTLB>(entry.ea_tag);
+    }
+
+    entry.valid  = !!(cmp & 0x80000000);
+    entry.vsid   = (cmp >> 7) & 0xFFFFFF;
+    entry.ea_tag = ea & PPC_PAGE_MASK;
+    entry.pte_lo = ppc_state.spr[SPR::RPA];
+    tlb603_lru[tlb_type][set] = way ^ 1;
+
+    // Never leave two entries for one page: the newer one wins.
+    Tlb603Entry &other = tlb603[tlb_type][set][way ^ 1];
+    if (other.valid && other.vsid == entry.vsid &&
+        !((other.ea_tag ^ entry.ea_tag) & 0x0FFFF000))
+        other.valid = false;
+
+    if (tlb_type == TLBType::ITLB)
+        tlb_flush_pat_page<TLBType::ITLB>(entry.ea_tag);
+    else
+        tlb_flush_pat_page<TLBType::DTLB>(entry.ea_tag);
+}
+
+// tlbie on the 603 invalidates both ways of the indexed set in both TLBs.
+// The caller flushes our cached page translations.
+void mmu_603_tlb_invalidate_set(uint32_t ea)
+{
+    uint32_t set = tlb603_set(ea);
+    for (auto &tlb : tlb603) {
+        tlb[set][0].valid = false;
+        tlb[set][1].valid = false;
+    }
 }
 
 static void mpc601_bat_update(uint32_t bat_reg)
@@ -1984,6 +2178,9 @@ void ppc_mmu_init()
     last_ptab_area  = {0xFFFFFFFF, 0xFFFFFFFF, 0, 0, nullptr, nullptr};
 
     mmu_exception_handler = ppc_exception_handler;
+
+    std::memset(tlb603, 0, sizeof(tlb603));
+    std::memset(tlb603_lru, 0, sizeof(tlb603_lru));
 
     if (is_601) {
         // use 601-style unified BATs

@@ -316,6 +316,16 @@ if (DPPC_BUILD_DEVICE_TESTS)
         $<TARGET_OBJECTS:loguru>)
     target_link_libraries(testcputiming PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
     add_test(NAME cputiming COMMAND testcputiming)
+    add_executable(testcpu603tlb tests/cpu603tlb.cpp tests/headless_display.cpp
+        $<TARGET_OBJECTS:core>
+        $<TARGET_OBJECTS:cpu_ppc>
+        $<TARGET_OBJECTS:debugger>
+        $<FILTER:$<TARGET_OBJECTS:devices>,EXCLUDE,display_sdl>
+        $<TARGET_OBJECTS:machines>
+        $<TARGET_OBJECTS:utils>
+        $<TARGET_OBJECTS:loguru>)
+    target_link_libraries(testcpu603tlb PRIVATE $<TARGET_PROPERTY:chungusppc,LINK_LIBRARIES>)
+    add_test(NAME cpu603tlb COMMAND testcpu603tlb)
     add_executable(testmachinesettings tests/machinesettings.cpp
         $<TARGET_OBJECTS:core>
         $<TARGET_OBJECTS:cpu_ppc>
