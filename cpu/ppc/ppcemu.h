@@ -116,6 +116,13 @@ enum SPR : int {
     TBL_S   = 284, // supervisor TBL
     TBU_S   = 285, // supervisor TBU
     PVR     = 287,
+    DMISS   = 976, // 603: effective address of the missed data access
+    DCMP    = 977, // 603: PTE word 0 to compare against for a data miss
+    HASH1   = 978, // 603: physical address of the primary PTEG
+    HASH2   = 979, // 603: physical address of the secondary PTEG
+    IMISS   = 980, // 603: effective address of the missed instruction fetch
+    ICMP    = 981, // 603: PTE word 0 to compare against for an instruction miss
+    RPA     = 982, // 603: PTE word 1 that tlbld/tlbli load into the TLB
     MMCR0   = 952,
     PMC1    = 953,
     PMC2    = 954,
@@ -337,6 +344,9 @@ enum class Except_Type {
     EXC_TRACE           = 0x0D,
     EXC_FP_ASSIST       = 0x0E,
     EXC_PERF_MON_INT    = 0x0F,
+    EXC_ITLB_MISS       = 0x10, // 603 only
+    EXC_DTLB_LOAD_MISS  = 0x11, // 603 only
+    EXC_DTLB_STORE_MISS = 0x12, // 603 only
     EXC_INST_ADDR_BP    = 0x13,
     EXC_SYS_MGMT_INT    = 0x14,
     EXC_THRM_MGMT_INT   = 0x17,
@@ -384,6 +394,7 @@ extern bool dec_exception_pending;
 extern bool thrm_exception_pending;
 
 extern bool is_601;        // For PowerPC 601 Emulation
+extern bool is_603;        // 603 family: software-loaded TLBs, TGPR
 extern bool include_601;   // For non-PowerPC 601 emulation with 601 extras
                            // (matches Mac OS 9 environment which can emulate MPC 601 instructions)
 extern bool is_altivec;    // For Altivec Emulation
