@@ -28,6 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef AWAC_H
 #define AWAC_H
 
+#include <core/timermanager.h>
 #include <devices/common/hwcomponent.h>
 #include <devices/common/i2c/i2c.h>
 
