@@ -177,7 +177,9 @@ void AtaBaseDevice::write(const uint8_t reg_addr, const uint16_t value) {
         }
         this->r_command = value;
         if (this->is_selected() || this->r_command == DIAGNOSTICS) {
+            this->in_command = true;
             perform_command();
+            this->in_command = false;
         }
         break;
     case ATA_Reg::DEV_CTRL:
@@ -277,6 +279,28 @@ int AtaBaseDevice::push_data(uint8_t *buf, int len) {
 void AtaBaseDevice::update_intrq(uint8_t new_intrq_state) {
     if (!this->is_selected() || (this->r_dev_ctrl & IEN))
         return;
+
+    // A command we complete the moment it is issued still interrupts a little
+    // later, as a real drive does. Hosts often issue the next command from the
+    // handler of the previous one, and an interrupt raised before that handler
+    // returns can be acknowledged and dropped: Linux's NuBus Performa code
+    // clears every F108 flag on its way out without dispatching them.
+    if (new_intrq_state && this->in_command) {
+        if (!this->intrq_timer.active) {
+            TimerManager::get_instance()->add_oneshot_timer(this->intrq_timer,
+                USECS_TO_NSECS(100), [this](uint64_t, uint64_t) {
+                    this->intrq_timer.active = 0;
+                    this->update_intrq(1);
+                });
+        }
+        return;
+    }
+
+    // A host that polls STATUS has consumed the completion already.
+    if (!new_intrq_state && this->intrq_timer.active) {
+        TimerManager::get_instance()->cancel_timer(this->intrq_timer);
+        this->intrq_timer.active = 0;
+    }
 
     this->intrq_state = new_intrq_state;
     this->host_obj->report_intrq(new_intrq_state);

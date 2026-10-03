@@ -110,6 +110,8 @@ protected:
 
     std::function<void()> post_xfer_action = nullptr;
 
+    bool      in_command = false; // perform_command() is executing
+    TimerInfo intrq_timer;        // INTRQ raised by a command still to be asserted
     TimerInfo read_data_timer;
     TimerInfo write_done_timer;
     TimerInfo write_more_timer;
