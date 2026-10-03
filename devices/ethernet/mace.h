@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef MACE_H
 #define MACE_H
 
+#include <core/timermanager.h>
 #include <devices/common/dmacore.h>
 #include <devices/common/hwcomponent.h>
 #include <devices/common/hwinterrupt.h>
@@ -194,7 +195,7 @@ private:
     std::deque<std::vector<uint8_t>> rcv_queue;
     std::vector<uint8_t>             rcv_frame;
     size_t                           rcv_pos       = 0;
-    uint32_t                         poll_timer_id = 0;
+    TimerInfo                        poll_timer;
 
     uint16_t    chip_id;          // per-instance MACE Chip ID
     uint8_t     addr_cfg      = 0;

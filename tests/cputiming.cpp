@@ -19,12 +19,14 @@ int main() {
             ++failures;
         }
     };
+    TimerInfo fire_timer, stop_timer;
     for (uint32_t period : {16, 13, 11}) {
         ppc_cpu_init(&memory, PPC_VER::MPC601, true, 7833600, period);
         ppc_state.pc = 0x1000;
         check(!g_realtime && get_virt_time_ns() == 0, "instruction clock starts at zero");
         unsigned fired = 0;
-        TimerManager::get_instance()->add_oneshot_timer(period * 3, [&] { ++fired; });
+        TimerManager::get_instance()->add_oneshot_timer(fire_timer, period * 3,
+            [&](uint64_t, uint64_t) { ++fired; });
         ppc_exec_single();
         ppc_exec_single();
         check(fired == 0, "timer does not fire early");
@@ -58,7 +60,8 @@ int main() {
         // Exercise the main interpreter's conversion from a timer deadline
         // to an instruction budget, not just the debugger's single-step path.
         before = get_virt_time_ns();
-        TimerManager::get_instance()->add_oneshot_timer(1000, [] { power_on = false; });
+        TimerManager::get_instance()->add_oneshot_timer(stop_timer, 1000,
+            [](uint64_t, uint64_t) { power_on = false; });
         power_on = true;
         ppc_exec();
         check(get_virt_time_ns() >= before + 1000 &&

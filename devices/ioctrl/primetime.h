@@ -39,6 +39,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef PRIME_TIME_TWO_H
 #define PRIME_TIME_TWO_H
 
+#include <core/timermanager.h>
 #include <devices/common/hwcomponent.h>
 #include <devices/common/hwinterrupt.h>
 #include <devices/common/mmiodevice.h>
@@ -222,7 +223,7 @@ private:
     uint8_t     f108_irq      = 0;
     bool        cpu_irq       = false;
 
-    uint32_t    pseudo_vbl_tid = 0;
+    TimerInfo   pseudo_vbl_timer;
 };
 
 #endif // PRIME_TIME_TWO_H

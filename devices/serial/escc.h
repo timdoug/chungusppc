@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef ESCC_H
 #define ESCC_H
 
+#include <core/timermanager.h>
 #include <devices/common/hwcomponent.h>
 #include <devices/common/dbdma.h>
 #include <devices/common/dmacore.h>
@@ -127,7 +128,7 @@ private:
     bool           ext_pending = false;
     bool           first_rx_armed = true;
     std::deque<uint8_t> rx_fifo;
-    uint32_t rx_timer = 0, tx_timer = 0;
+    TimerInfo rx_timer, tx_timer;
     std::function<void()> interrupt_changed;
     uint64_t character_period(bool transmit = false) const;
     void update_receive_timer();
