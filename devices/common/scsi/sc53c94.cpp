@@ -66,6 +66,11 @@ void Sc53C94::reset_device()
 {
     // part-unique ID to be read using a magic sequence
     this->xfer_count = this->chip_id << 16;
+    // The reset clears the start count as well. Linux's driver reloads the
+    // counter with a DMA NOP straight after resetting, then moves data by PIO
+    // and subtracts whatever the counter reads, so a count left over from
+    // Mac OS would turn every transfer negative.
+    this->set_xfer_count = this->chip_id << 16;
 
     this->clk_factor   = 2;
     this->sel_timeout  = 0;
