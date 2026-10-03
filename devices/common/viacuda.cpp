@@ -607,7 +607,7 @@ void ViaCuda::autopoll_handler() {
     // is waiting for, and it waits for it forever. Autopoll repeats every few
     // milliseconds, so skipping this round costs nothing. Don't poll the bus at
     // all in that case, otherwise the polled data would be dropped instead.
-    bool response_pending = !this->treq || this->treq_timer_id || this->sr_timer_id;
+    bool response_pending = !this->treq || this->treq_timer.active || this->sr_timer.active;
 
     if (response_pending)
         LOG_F(9, "Cuda: autopoll skipped, a command response is still pending");

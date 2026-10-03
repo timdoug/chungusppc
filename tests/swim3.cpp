@@ -79,8 +79,8 @@ int main() {
                     write(Sectors_To_Xfer, 1);
                     write(Handshake_Mode1, SWIM3_GO);
                     for (int i = 0; i < 100 && (read(Status_Mode0) & SWIM3_GO); ++i) {
-                        uint64_t delay = tm->process_timers();
-                        now += delay ? delay : 1;
+                        uint64_t next_ns = tm->process_timers();
+                        now = next_ns ? next_ns : now + 1;
                     }
                     tm->process_timers();
                     check(!(read(Status_Mode0) & SWIM3_GO), "transfer clears GO");

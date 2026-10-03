@@ -62,9 +62,9 @@ PrimeTimeTwo::PrimeTimeTwo() : MMIODevice()
 
 PrimeTimeTwo::~PrimeTimeTwo()
 {
-    if (this->pseudo_vbl_tid) {
-        TimerManager::get_instance()->cancel_timer(this->pseudo_vbl_tid);
-        this->pseudo_vbl_tid = 0;
+    if (this->pseudo_vbl_timer.active) {
+        TimerManager::get_instance()->cancel_timer(this->pseudo_vbl_timer);
+        this->pseudo_vbl_timer.active = 0;
     }
 }
 
@@ -80,9 +80,9 @@ int PrimeTimeTwo::device_postinit()
     }
 
     // drive the VIA1 CA1 input to generate the 60.15 Hz tick
-    this->pseudo_vbl_tid = TimerManager::get_instance()->add_cyclic_timer(
+    TimerManager::get_instance()->add_cyclic_timer(this->pseudo_vbl_timer,
         static_cast<uint64_t>((1.0f/60.15) * NS_PER_SEC + 0.5f),
-        [this]() {
+        [this](uint64_t, uint64_t) {
             this->viacuda->assert_ctrl_line(ViaLine::CA1);
         });
 

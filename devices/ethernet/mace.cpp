@@ -33,8 +33,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 using namespace MaceEnet;
 
 MaceController::~MaceController() {
-    if (this->poll_timer_id)
-        TimerManager::get_instance()->cancel_timer(this->poll_timer_id);
+    if (this->poll_timer.active)
+        TimerManager::get_instance()->cancel_timer(this->poll_timer);
     if (this->backend)
         this->backend->stop();
 }
@@ -231,10 +231,10 @@ void MaceController::poll_backend() {
     if (this->backend)
         this->backend->poll();
 
-    this->poll_timer_id = TimerManager::get_instance()->add_oneshot_timer(
+    TimerManager::get_instance()->add_oneshot_timer(this->poll_timer,
         USECS_TO_NSECS(MACE_POLL_INTERVAL_US),
-        [this]() {
-            this->poll_timer_id = 0;
+        [this](uint64_t, uint64_t) {
+            this->poll_timer.active = false;
             this->poll_backend();
         });
 }

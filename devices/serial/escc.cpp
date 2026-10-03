@@ -285,8 +285,8 @@ void EsccController::write_internal(EsccChannel *ch, uint8_t value)
 // ======================== ESCC Channel methods ==============================
 EsccChannel::~EsccChannel()
 {
-    if (rx_timer) TimerManager::get_instance()->cancel_timer(rx_timer);
-    if (tx_timer) TimerManager::get_instance()->cancel_timer(tx_timer);
+    if (rx_timer.active) TimerManager::get_instance()->cancel_timer(rx_timer);
+    if (tx_timer.active) TimerManager::get_instance()->cancel_timer(tx_timer);
 }
 
 uint64_t EsccChannel::character_period(bool transmit) const
@@ -311,10 +311,11 @@ uint64_t EsccChannel::character_period(bool transmit) const
 void EsccChannel::update_receive_timer()
 {
     auto timers = TimerManager::get_instance();
-    if (rx_timer) timers->cancel_timer(rx_timer);
-    rx_timer = 0;
+    if (rx_timer.active) timers->cancel_timer(rx_timer);
+    rx_timer.active = false;
     if (write_regs[WR3] & WR3_RX_ENABLE)
-        rx_timer = timers->add_cyclic_timer(character_period(), [this] { receive_tick(); });
+        timers->add_cyclic_timer(rx_timer, character_period(),
+            [this](uint64_t, uint64_t) { receive_tick(); });
 }
 
 void EsccChannel::receive_tick()
@@ -355,9 +356,9 @@ void EsccChannel::attach_backend(int id)
 void EsccChannel::reset(bool hw_reset)
 {
     this->chario->rcv_disable();
-    if (rx_timer) TimerManager::get_instance()->cancel_timer(rx_timer);
-    if (tx_timer) TimerManager::get_instance()->cancel_timer(tx_timer);
-    rx_timer = tx_timer = 0;
+    if (rx_timer.active) TimerManager::get_instance()->cancel_timer(rx_timer);
+    if (tx_timer.active) TimerManager::get_instance()->cancel_timer(tx_timer);
+    rx_timer.active = tx_timer.active = false;
     rx_fifo.clear();
     this->tx_pending = false;
     this->ext_pending = false;
@@ -522,9 +523,10 @@ void EsccChannel::send_byte(uint8_t value)
     tx_pending = false;
     read_regs[RR0] &= ~RR0_TX_BUFFER_EMPTY;
     read_regs[RR1] &= ~RR1_ALL_SENT;
-    if (tx_timer) TimerManager::get_instance()->cancel_timer(tx_timer);
-    tx_timer = TimerManager::get_instance()->add_oneshot_timer(character_period(true), [this] {
-        tx_timer = 0;
+    if (tx_timer.active) TimerManager::get_instance()->cancel_timer(tx_timer);
+    TimerManager::get_instance()->add_oneshot_timer(tx_timer, character_period(true),
+        [this](uint64_t, uint64_t) {
+        tx_timer.active = false;
         read_regs[RR0] |= RR0_TX_BUFFER_EMPTY;
         read_regs[RR1] |= RR1_ALL_SENT;
         tx_pending = true;
