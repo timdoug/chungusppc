@@ -1581,13 +1581,17 @@ void dppc_interpreter::ppc_rfi(uint32_t opcode) {
     }
 
     // keep 0, 5-9, 16-23, 25-27, 30-31 bits; exclude POW, ILE, and Reserved bits.
-    const uint32_t msr_bits_to_replace = 0x87C0FF73UL;
+    // The 603 restores only bits 16-31: a TLB miss leaves CR0 in SRR1[0-3].
+    const uint32_t msr_bits_to_replace = is_603 ? 0x0000FF73UL : 0x87C0FF73UL;
     const uint32_t msr_bits_to_clear   = MSR::POW;
 
     uint32_t bits_from_srr1 =  ppc_state.spr[SPR::SRR1] &
                               (msr_bits_to_replace & ~msr_bits_to_clear);
     uint32_t new_msr_val    = (ppc_state.msr & ~(msr_bits_to_replace | msr_bits_to_clear)) |
                                bits_from_srr1;
+    // A 603 TLB miss handler returns to the regular GPRs.
+    if (is_603)
+        new_msr_val &= ~MSR::TGPR;
     if (!is_601) {
         ppc_change_endian((new_msr_val & MSR::LE) != 0);
     }
@@ -2212,6 +2216,10 @@ void dppc_interpreter::ppc_tlbie(uint32_t opcode) {
         return;
     }
 
+    // The 603's TLBs are architecturally visible, so drop the set it indexes.
+    if (is_603)
+        mmu_603_tlb_invalidate_set(ppc_state.gpr[(opcode >> 11) & 0x1F]);
+
     // Ideally we would get the effective address via ppc_state.gpr[(opcode >> 11) & 0x1F]
     // and use that to identify entries to flush. But that is CPU-dependent (e.g.
     // on the 750 only bits 14-19 are used to find matching entries) and does not
@@ -2238,14 +2246,24 @@ void dppc_interpreter::ppc_tlbld(uint32_t opcode) {
 #ifdef CPU_PROFILING
     num_supervisor_instrs++;
 #endif
-    /* placeholder */
+    if (ppc_state.msr & MSR::PR) {
+        ppc_exception_handler(Except_Type::EXC_PROGRAM, Exc_Cause::NOT_ALLOWED);
+        return;
+    }
+    if (is_603)
+        mmu_603_tlb_load(TLBType::DTLB, ppc_state.gpr[(opcode >> 11) & 0x1F]);
 }
 
 void dppc_interpreter::ppc_tlbli(uint32_t opcode) {
 #ifdef CPU_PROFILING
     num_supervisor_instrs++;
 #endif
-    /* placeholder */
+    if (ppc_state.msr & MSR::PR) {
+        ppc_exception_handler(Except_Type::EXC_PROGRAM, Exc_Cause::NOT_ALLOWED);
+        return;
+    }
+    if (is_603)
+        mmu_603_tlb_load(TLBType::ITLB, ppc_state.gpr[(opcode >> 11) & 0x1F]);
 }
 
 void dppc_interpreter::ppc_tlbsync(uint32_t opcode) {

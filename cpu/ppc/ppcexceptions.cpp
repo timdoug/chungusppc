@@ -43,6 +43,8 @@ void ppc_exception_handler(Except_Type exception_type, uint32_t srr1_bits) {
     case Except_Type::EXC_ALIGNMENT:
     case Except_Type::EXC_PROGRAM:
     case Except_Type::EXC_NO_FPU:
+    case Except_Type::EXC_DTLB_LOAD_MISS:
+    case Except_Type::EXC_DTLB_STORE_MISS:
         ppc_state.spr[SPR::SRR0]     = ppc_state.pc & 0xFFFFFFFC;
         break;
 
@@ -54,6 +56,7 @@ void ppc_exception_handler(Except_Type exception_type, uint32_t srr1_bits) {
         break;
 
     case Except_Type::EXC_ISI:
+    case Except_Type::EXC_ITLB_MISS:
         if (exec_flags & ~EXEF_OPC_DECODER) {
             ppc_state.spr[SPR::SRR0] = ppc_next_instruction_address;
         } else {
@@ -85,6 +88,14 @@ void ppc_exception_handler(Except_Type exception_type, uint32_t srr1_bits) {
     ppc_state.spr[SPR::SRR1] = (ppc_state.msr & 0x0000FF73) | srr1_bits;
     uint32_t old_msr_val = ppc_state.msr;
     uint32_t new_msr_val = old_msr_val & 0xFFFB1041;
+    if (is_603) {
+        // Only the TLB miss exceptions switch to the TGPR registers.
+        new_msr_val &= ~MSR::TGPR;
+        if (exception_type == Except_Type::EXC_ITLB_MISS ||
+            exception_type == Except_Type::EXC_DTLB_LOAD_MISS ||
+            exception_type == Except_Type::EXC_DTLB_STORE_MISS)
+            new_msr_val |= MSR::TGPR;
+    }
     /* copy MSR[ILE] to MSR[LE] */
     if (!is_601) {
         new_msr_val = (new_msr_val & ~MSR::LE) | !!(new_msr_val & MSR::ILE);
@@ -174,6 +185,12 @@ void ppc_exception_handler(Except_Type exception_type, uint32_t srr1_bits) {
 
     case Except_Type::EXC_THRM_MGMT_INT:
         exc_descriptor = "Thermal management interrupt exception occurred";
+        break;
+
+    case Except_Type::EXC_ITLB_MISS:
+    case Except_Type::EXC_DTLB_LOAD_MISS:
+    case Except_Type::EXC_DTLB_STORE_MISS:
+        exc_descriptor = "603 TLB miss: address not in the TLB";
         break;
 
     default:

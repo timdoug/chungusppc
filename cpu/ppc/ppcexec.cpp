@@ -57,6 +57,7 @@ using namespace dppc_interpreter;
 MemCtrlBase* mem_ctrl_instance = 0;
 
 bool is_601 = false;
+bool is_603 = false;
 bool include_601 = false;
 PPCPowMode ppc_pow_mode = PPCPowMode::None;
 uint32_t ppc_pow_hid0_mask = 0;
@@ -251,8 +252,17 @@ static PPCOpcode OpcodeGrabber[64 * 2048];
     everything else is the same.*/
 static PPCOpcode OpcodeGrabberNoFPU[64 * 2048];
 
+// GPR0-3 while MSR[TGPR] is clear, or TGPR0-3 while it is set
+static uint32_t ppc_shadow_gprs[4];
+
 void ppc_msr_did_change(uint32_t old_msr_val, uint32_t new_msr_val, bool set_next_instruction_address) {
     ppc_state.msr = new_msr_val;
+    if (is_603 && ((old_msr_val ^ new_msr_val) & MSR::TGPR)) {
+        // The 603's TLB miss handlers run on TGPR0-3, which replace GPR0-3
+        // for as long as MSR[TGPR] stays set.
+        for (int i = 0; i < 4; i++)
+            std::swap(ppc_state.gpr[i], ppc_shadow_gprs[i]);
+    }
     if ((old_msr_val ^ new_msr_val) & MSR::FP) {
         bool newFP = (new_msr_val & MSR::FP) != 0;
         ppc_opcode_grabber = newFP ? OpcodeGrabber : OpcodeGrabberNoFPU;
@@ -1022,6 +1032,9 @@ void ppc_cpu_init(MemCtrlBase* mem_ctrl, uint32_t cpu_version, bool do_include_6
 
     ppc_state.spr[SPR::PVR] = cpu_version;
     is_601 = (cpu_version >> 16) == 1;
+    is_603 = cpu_version == PPC_VER::MPC603 || cpu_version == PPC_VER::MPC603E ||
+             cpu_version == PPC_VER::MPC603EV;
+    std::memset(ppc_shadow_gprs, 0, sizeof(ppc_shadow_gprs));
     include_601 = !is_601 & do_include_601;
     ppc_pow_mode = PPCPowMode::None;
     ppc_pow_hid0_mask = 0;
