@@ -388,9 +388,12 @@ static uint64_t process_events()
         // no pending timers: check again in 0.5 ms
         next_ns = TimerManager::get_instance()->current_time_ns() + 500'000;
     }
-    // convert the absolute deadline into the cycle count that reaches it
-    // (inverse of get_virt_time_ns)
-    return (next_ns - std::min(next_ns, icnt_time_offset_ns)) / icnt_period_ns + 1;
+    // Budget instructions from the time remaining, sampled after the callbacks
+    // ran. Without --realtime this lands exactly on the deadline; with it,
+    // g_icycles doesn't track virtual time, so an absolute cycle target would
+    // drift from the host clock.
+    uint64_t now_ns = get_virt_time_ns();
+    return g_icycles + (next_ns > now_ns ? (next_ns - now_ns) / icnt_period_ns : 0) + 1;
 }
 
 static void force_cycle_counter_reload()
