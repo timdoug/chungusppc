@@ -226,7 +226,10 @@ You can use these keyboard commands while the emulator is running:
 * Control--: smaller
 * Control-L: log toggle
 * Control-D: debugger
-* Control-Alt-R: toggle realtime guest timing
+* Control-Alt-R: toggle realtime guest timing (Control-Option-R on macOS)
+
+The percentage in the window title is display magnification: `200%` means
+each guest pixel is displayed at twice its original size in each direction.
 
 ## Driving the emulator from outside
 
